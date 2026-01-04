@@ -27,14 +27,14 @@ public record MapSnapshot(
         // 1. 核心图
         Digraph<RcsPoint, RcsPointTarget> graph,
         // 2. 入口索引 (业务ID -> 算法ID)
-        Map<String, Integer> pointKeyToGraphId,
+        Map<Long, Integer> pointKeyToGraphId,
         // 3. 业务索引
-        Map<String, RcsPoint> pointMap,
+        Map<Long, RcsPoint> pointMap,
         // 4. 版本号
         Map<Integer, String> versionMd5,
         // 5. 点位占用集合
         // Key: 地图编号_点位编号
-        Map<String, RcsPointOccupy> occupys,
+        Map<Long, RcsPointOccupy> occupys,
 
         // 6. 空间索引 (JTS STRtree)
         // Key: 地图编号, Value: 只读的 R-Tree 索引

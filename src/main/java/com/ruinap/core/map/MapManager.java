@@ -123,7 +123,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
      */
     public boolean getPointOccupyState(Integer mapId, Integer pointId) {
         boolean occupied = false;
-        String key = MapKeyUtil.compositeKey(mapId, pointId);
+        long key = MapKeyUtil.compositeKey(mapId, pointId);
         RcsPointOccupy rcsOccupy = occupyMap.get(key);
         if (rcsOccupy != null) {
             occupied = rcsOccupy.isPhysicalBlocked();
@@ -206,7 +206,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
      * @return true=操作成功, false=点位不存在
      */
     public boolean removeOccupyType(String deviceCode, RcsPoint rcsPoint, PointOccupyTypeEnum type) {
-        String key = MapKeyUtil.compositeKey(rcsPoint.getMapId(), rcsPoint.getId());
+        long key = MapKeyUtil.compositeKey(rcsPoint.getMapId(), rcsPoint.getId());
         RcsPointOccupy rcsOccupy = occupyMap.get(key);
         if (rcsOccupy != null) {
             return rcsOccupy.release(deviceCode, type);

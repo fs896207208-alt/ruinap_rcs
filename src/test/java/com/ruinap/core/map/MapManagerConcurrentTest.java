@@ -69,9 +69,9 @@ public class MapManagerConcurrentTest {
      */
     private MapSnapshot buildRealSnapshot(int mapId, int pointCount) {
         Digraph<RcsPoint, RcsPointTarget> graph = GraphBuilder.numVertices(pointCount).buildDigraph();
-        Map<String, RcsPoint> pointMap = new HashMap<>();
-        Map<String, Integer> keyToId = new HashMap<>();
-        Map<String, RcsPointOccupy> occupys = new HashMap<>();
+        Map<Long, RcsPoint> pointMap = new HashMap<>();
+        Map<Long, Integer> keyToId = new HashMap<>();
+        Map<Long, RcsPointOccupy> occupys = new HashMap<>();
         List<RcsPoint> pointList = new ArrayList<>();
 
         for (int i = 0; i < pointCount; i++) {
@@ -81,7 +81,7 @@ public class MapManagerConcurrentTest {
             p.setMapId(mapId);
             p.setGraphIndex(i);
 
-            String key = MapKeyUtil.compositeKey(mapId, pid);
+            long key = MapKeyUtil.compositeKey(mapId, pid);
             pointMap.put(key, p);
             keyToId.put(key, i);
             pointList.add(p);

@@ -68,9 +68,9 @@ public class MapManagerTest {
     private MapSnapshot buildSnapshot(int mapId, List<Integer> pointIds, String version) {
         // 1. 构建图和索引
         Digraph<RcsPoint, RcsPointTarget> graph = GraphBuilder.numVertices(pointIds.size()).buildDigraph();
-        Map<String, Integer> pointKeyToGraphId = new HashMap<>();
-        Map<String, RcsPoint> pointMap = new HashMap<>();
-        Map<String, RcsPointOccupy> occupys = new HashMap<>();
+        Map<Long, Integer> pointKeyToGraphId = new HashMap<>();
+        Map<Long, RcsPoint> pointMap = new HashMap<>();
+        Map<Long, RcsPointOccupy> occupys = new HashMap<>();
         List<RcsPoint> pointList = new ArrayList<>();
 
         for (int i = 0; i < pointIds.size(); i++) {
@@ -80,7 +80,7 @@ public class MapManagerTest {
             p.setMapId(mapId);
             p.setGraphIndex(i); // 模拟 MapLoader 分配的 ID
 
-            String key = MapKeyUtil.compositeKey(mapId, pid);
+            long key = MapKeyUtil.compositeKey(mapId, pid);
             pointMap.put(key, p);
             pointKeyToGraphId.put(key, i);
             pointList.add(p);

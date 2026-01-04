@@ -152,13 +152,13 @@ public class MapLoader {
         // -----------------------------------------------------------------------
 
         // 业务索引: "1_23" -> Point Object (用于 O(1) 业务查询)
-        Map<String, RcsPoint> pointMap = new HashMap<>(allPoints.size());
+        Map<Long, RcsPoint> pointMap = new HashMap<>(allPoints.size());
 
         // 入口索引: "1_23" -> 0 (用于将业务指令转为算法指令)
-        Map<String, Integer> pointKeyToGraphId = new HashMap<>(allPoints.size());
+        Map<Long, Integer> pointKeyToGraphId = new HashMap<>(allPoints.size());
 
         // 点位占用 Map
-        Map<String, RcsPointOccupy> occupys = new HashMap<>(allPoints.size());
+        Map<Long, RcsPointOccupy> occupys = new HashMap<>(allPoints.size());
 
         int globalGraphIndex = 0;
 
@@ -167,7 +167,7 @@ public class MapLoader {
         Digraph<RcsPoint, RcsPointTarget> graph = GraphBuilder.numVertices(allPoints.size()).buildDigraph();
 
         for (RcsPoint p : allPoints) {
-            String key = MapKeyUtil.compositeKey(p.getMapId(), p.getId());
+            long key = MapKeyUtil.compositeKey(p.getMapId(), p.getId());
 
             // 3.1 填充 Map 索引
             pointMap.put(key, p);
@@ -197,7 +197,7 @@ public class MapLoader {
                     // 默认同层导航，目标 mapId = 当前 mapId
                     int targetMapId = startPoint.getMapId();
                     int targetPointId = target.getId();
-                    String targetKey = MapKeyUtil.compositeKey(targetMapId, targetPointId);
+                    long targetKey = MapKeyUtil.compositeKey(targetMapId, targetPointId);
 
                     // 查表获取目标点的算法 ID
                     Integer v = pointKeyToGraphId.get(MapKeyUtil.compositeKey(targetMapId, targetPointId));
@@ -453,7 +453,7 @@ public class MapLoader {
      * 处理桥接点 (Bridge Edges)
      * <p>根据 YAML 配置，在不同地图/楼层的点位之间建立高权重的虚拟边，实现跨图导航。</p>
      */
-    private void addBridgeEdges(Digraph<RcsPoint, RcsPointTarget> g, Map<String, Integer> keyToId, Map<String, RcsPoint> pointMap, Map<String, ? extends Map<String, String>> bridges) {
+    private void addBridgeEdges(Digraph<RcsPoint, RcsPointTarget> g, Map<Long, Integer> keyToId, Map<Long, RcsPoint> pointMap, Map<String, ? extends Map<String, String>> bridges) {
         if (bridges == null) {
             return;
         }
