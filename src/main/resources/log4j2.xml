@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 日志系统配置 -->
+<!-- status是日志本身的输出级别，支持多种日志级别，可以精细化控制日志输出：
+    ALL：打印所有日志。
+    TRACE：非常细粒度的信息，用于追踪程序运行。
+    DEBUG：开发阶段用于调试的信息。
+    INFO：普通运行信息，例如程序启动、停止。
+    WARN：警告信息，可能的潜在问题。
+    ERROR：错误信息，导致某些功能无法执行。
+    FATAL：严重错误，导致系统可能无法继续运行。
+    OFF：关闭所有日志。
+-->
+<!-- 开发环境: 可将日志级别设置为DEBUG或INFO，以便获取更多的内部运行信息，帮助调试和开发-->
+<!-- 生产环境: 通常设置为WARN，ERROR或更高，以减少日志输出的数量，避免大量不必要的信息，集中关注可能的问题-->
+<Configuration status="INFO">
+
+    <!-- 定义不同的追加器用于日志记录 -->
+    <Appenders>
+        <!-- 系统日志的滚动文件追加器 -->
+        <RollingFile name="SysLogFile" fileName="log/system/sys.log"
+                     filePattern="log/system/$${date:yyyy-MM-dd}/sys-%d{yyyy-MM-dd_HH_mm}-%i.log">
+            <!-- 定义系统日志的布局 -->
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss.SSS}] [%t] [%level] %msg%n" charset="UTF-8"/>
+            <!-- 定义滚动文件的触发策略 -->
+            <Policies>
+                <!-- 系统启动时，触发拆分规则，生成新的日志文件 -->
+                <OnStartUpTriggeringPolicy/>
+                <!-- 每半小时创建一个新的日志文件 -->
+                <TimeBasedTriggeringPolicy interval="30" modulate="true"/>
+                <!-- 文件大于500MB创建一个新的日志文件 -->
+                <SizeBasedTriggeringPolicy size="500MB"/>
+            </Policies>
+            <!-- 定义滚动文件的默认策略，如果今日的日志最大文件数【要你命3000】个，则循环写日志 -->
+            <DefaultRolloverStrategy max="3000">
+                <!-- 定义日志清理策略 -->
+                <Delete basePath="log/system/$${date:yyyy-MM-dd}">
+                    <IfFileName glob="sys-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+            <!-- 使用自定义去重 Filters -->
+            <Filters>
+                <DeduplicationFilter appenderId="SysLogFile"/>
+            </Filters>
+        </RollingFile>
+
+        <!-- 通信日志的滚动文件追加器 -->
+        <RollingFile name="CommLogFile" fileName="log/communicate/comm.log"
+                     filePattern="log/communicate/$${date:yyyy-MM-dd}/comm-%d{yyyy-MM-dd_HH_mm}-%i.log">
+            <!-- 定义通信日志的布局 -->
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss.SSS}] [%t] [%level] %msg%n"
+                           charset="UTF-8"/>
+            <!-- 定义滚动文件的触发策略 -->
+            <Policies>
+                <!-- 系统启动时，触发拆分规则，生成新的日志文件 -->
+                <OnStartUpTriggeringPolicy/>
+                <!-- 每半小时创建一个新的日志文件 -->
+                <TimeBasedTriggeringPolicy interval="30" modulate="true"/>
+                <!-- 文件大于500MB创建一个新的日志文件 -->
+                <SizeBasedTriggeringPolicy size="500MB"/>
+            </Policies>
+            <!-- 定义滚动文件的默认策略，如果今日的日志最大文件数【要你命3000】个，则循环写日志 -->
+            <DefaultRolloverStrategy max="3000">
+                <!-- 定义日志清理策略 -->
+                <Delete basePath="log/communicate/$${date:yyyy-MM-dd}">
+                    <IfFileName glob="comm-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+            <!-- 使用自定义去重 Filters -->
+            <Filters>
+                <DeduplicationFilter appenderId="CommLogFile"/>
+            </Filters>
+        </RollingFile>
+
+        <!-- 通信其他日志的滚动文件追加器 -->
+        <RollingFile name="CommOtherLogFile" fileName="log/communicate/comm_other.log"
+                     filePattern="log/communicate/$${date:yyyy-MM-dd}/comm_other-%d{yyyy-MM-dd_HH_mm}-%i.log">
+            <!-- 定义通信日志的布局 -->
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss.SSS}] [%t] [%level] %msg%n"
+                           charset="UTF-8"/>
+            <!-- 定义滚动文件的触发策略 -->
+            <Policies>
+                <!-- 系统启动时，触发拆分规则，生成新的日志文件 -->
+                <OnStartUpTriggeringPolicy/>
+                <!-- 每半小时创建一个新的日志文件 -->
+                <TimeBasedTriggeringPolicy interval="30" modulate="true"/>
+                <!-- 文件大于500MB创建一个新的日志文件 -->
+                <SizeBasedTriggeringPolicy size="500MB"/>
+            </Policies>
+            <!-- 定义滚动文件的默认策略，如果今日的日志最大文件数【要你命3000】个，则循环写日志 -->
+            <DefaultRolloverStrategy max="3000">
+                <!-- 定义日志清理策略 -->
+                <Delete basePath="log/communicate/$${date:yyyy-MM-dd}">
+                    <IfFileName glob="comm_other-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+            <!-- 使用自定义去重 Filters -->
+            <Filters>
+                <DeduplicationFilter appenderId="CommOtherLogFile"/>
+            </Filters>
+        </RollingFile>
+
+        <!-- 任务日志的滚动文件追加器 -->
+        <RollingFile name="TaskLogFile" fileName="log/task/task.log"
+                     filePattern="log/task/$${date:yyyy-MM-dd}/task-%d{yyyy-MM-dd_HH_mm}-%i.log">
+            <!-- 定义任务日志的布局 -->
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss.SSS}] [%t] [%level] %msg%n"
+                           charset="UTF-8"/>
+            <!-- 定义滚动文件的触发策略 -->
+            <Policies>
+                <!-- 系统启动时，触发拆分规则，生成新的日志文件 -->
+                <OnStartUpTriggeringPolicy/>
+                <!-- 每半小时创建一个新的日志文件 -->
+                <TimeBasedTriggeringPolicy interval="30" modulate="true"/>
+                <!-- 文件大于500MB创建一个新的日志文件 -->
+                <SizeBasedTriggeringPolicy size="500MB"/>
+            </Policies>
+            <!-- 定义滚动文件的默认策略，如果今日的日志最大文件数【要你命3000】个，则循环写日志 -->
+            <DefaultRolloverStrategy max="3000">
+                <!-- 定义日志清理策略 -->
+                <Delete basePath="log/task/$${date:yyyy-MM-dd}">
+                    <IfFileName glob="task-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+        <!-- 操作日志的滚动文件追加器 -->
+        <RollingFile name="OperateLogFile" fileName="log/operate/operate.log"
+                     filePattern="log/operate/$${date:yyyy-MM-dd}/operate-%d{yyyy-MM-dd_HH_mm}-%i.log">
+            <!-- 定义操作日志的布局 -->
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss.SSS}] [%t] [%level] %msg%n"
+                           charset="UTF-8"/>
+            <!-- 定义滚动文件的触发策略 -->
+            <Policies>
+                <!-- 系统启动时，触发拆分规则，生成新的日志文件 -->
+                <OnStartUpTriggeringPolicy/>
+                <!-- 每半小时创建一个新的日志文件 -->
+                <TimeBasedTriggeringPolicy interval="30" modulate="true"/>
+                <!-- 文件大于500MB创建一个新的日志文件 -->
+                <SizeBasedTriggeringPolicy size="500MB"/>
+            </Policies>
+            <!-- 定义滚动文件的默认策略，如果今日的日志最大文件数【要你命3000】个，则循环写日志 -->
+            <DefaultRolloverStrategy max="3000">
+                <!-- 定义日志清理策略 -->
+                <Delete basePath="log/operate/$${date:yyyy-MM-dd}">
+                    <IfFileName glob="task-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+        <!-- 算法日志的滚动文件追加器 -->
+        <RollingFile name="AlgorithmLogFile" fileName="log/algorithm/algorithm.log"
+                     filePattern="log/algorithm/$${date:yyyy-MM-dd}/algorithm-%d{yyyy-MM-dd_HH_mm}-%i.log">
+            <!-- 定义算法日志的布局 -->
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss.SSS}] [%t] [%level] %msg%n"
+                           charset="UTF-8"/>
+            <!-- 定义滚动文件的触发策略 -->
+            <Policies>
+                <!-- 系统启动时，触发拆分规则，生成新的日志文件 -->
+                <OnStartUpTriggeringPolicy/>
+                <!-- 每半小时创建一个新的日志文件 -->
+                <TimeBasedTriggeringPolicy interval="30" modulate="true"/>
+                <!-- 文件大于500MB创建一个新的日志文件 -->
+                <SizeBasedTriggeringPolicy size="500MB"/>
+            </Policies>
+            <!-- 定义滚动文件的默认策略，如果今日的日志最大文件数【要你命3000】个，则循环写日志 -->
+            <DefaultRolloverStrategy max="3000">
+                <!-- 定义日志清理策略 -->
+                <Delete basePath="log/algorithm/$${date:yyyy-MM-dd}">
+                    <IfFileName glob="algorithm-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+            <!-- 使用自定义去重 Filters -->
+            <!--            <Filters>-->
+            <!--                <DeduplicationFilter appenderId="AlgorithmLogFile"/>-->
+            <!--            </Filters>-->
+        </RollingFile>
+
+        <!-- HTTP日志的滚动文件追加器 -->
+        <RollingFile name="HttpLogFile" fileName="log/http/http.log"
+                     filePattern="log/http/$${date:yyyy-MM-dd}/http-%d{yyyy-MM-dd_HH_mm}-%i.log">
+            <!-- 定义HTTP日志的布局 -->
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss.SSS}] [%t] %msg%n" charset="UTF-8"/>
+            <!-- 定义滚动文件的触发策略 -->
+            <Policies>
+                <!-- 系统启动时，触发拆分规则，生成新的日志文件 -->
+                <OnStartUpTriggeringPolicy/>
+                <!-- 每半小时创建一个新的日志文件 -->
+                <TimeBasedTriggeringPolicy interval="30" modulate="true"/>
+                <!-- 文件大于500MB创建一个新的日志文件 -->
+                <SizeBasedTriggeringPolicy size="500MB"/>
+            </Policies>
+            <!-- 定义滚动文件的默认策略，如果今日的日志最大文件数【要你命3000】个，则循环写日志 -->
+            <DefaultRolloverStrategy max="3000">
+                <!-- 定义日志清理策略 -->
+                <Delete basePath="log/http/$${date:yyyy-MM-dd}">
+                    <IfFileName glob="http-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+        <!-- Console日志的滚动文件追加器 -->
+        <RollingFile name="ConsoleLogFile" fileName="log/console/console.log"
+                     filePattern="log/console/$${date:yyyy-MM-dd}/console-%d{yyyy-MM-dd_HH_mm}-%i.log">
+            <!-- 定义控制台日志的布局 -->
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss.SSS}] [%t] [%level] %msg%n"
+                           charset="UTF-8"/>
+            <!-- 定义滚动文件的触发策略 -->
+            <Policies>
+                <!-- 系统启动时，触发拆分规则，生成新的日志文件 -->
+                <OnStartUpTriggeringPolicy/>
+                <!-- 每半小时创建一个新的日志文件 -->
+                <TimeBasedTriggeringPolicy interval="30" modulate="true"/>
+                <!-- 文件大于500MB创建一个新的日志文件 -->
+                <SizeBasedTriggeringPolicy size="500MB"/>
+            </Policies>
+            <!-- 定义滚动文件的默认策略，如果今日的日志最大文件数【要你命3000】个，则循环写日志-->
+            <DefaultRolloverStrategy max="3000">
+                <!-- 定义日志清理策略 -->
+                <Delete basePath="log/console/$${date:yyyy-MM-dd}">
+                    <IfFileName glob="console-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+            <!-- 使用自定义去重 Filters -->
+            <Filters>
+                <DeduplicationFilter appenderId="ConsoleLogFile"/>
+            </Filters>
+        </RollingFile>
+
+        <!-- 关键帧日志的滚动文件配置 -->
+        <RollingFile name="KeyFrameLogFile" fileName="log/keyframe/keyframe.log"
+                     filePattern="log/keyframe/%d{yyyy-MM-dd}/%d{HH}/keyframe-%d{yyyy-MM-dd_HH}-%i.json.gz">
+            <!-- 使用 %d{yyyy-MM-dd} 和 %d{HH} 直接生成日期和小时目录 -->
+            <PatternLayout pattern="%msg%n," charset="UTF-8"/>
+            <Policies>
+                <!-- 系统启动时，触发拆分规则，生成新的日志文件 -->
+                <OnStartUpTriggeringPolicy/>
+                <!-- 每小时滚动一次 -->
+                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+                <!-- 文件大于200MB时滚动 -->
+                <!--<SizeBasedTriggeringPolicy size="200MB"/>-->
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="nomax">
+                <!-- 清理30天前的日志 -->
+                <Delete basePath="log/keyframe" maxDepth="2">
+                    <IfFileName glob="**/*.json.gz"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+
+        <!-- 控制台追加器用于输出到控制台 -->
+        <Console name="Console" target="SYSTEM_OUT">
+            <!-- 定义控制台日志的布局 -->
+            <PatternLayout pattern="[%d{HH:mm:ss.SSS}] [%t] [%level] %msg%n" charset="UTF-8"/>
+            <!-- 使用自定义去重 Filters -->
+            <Filters>
+                <DeduplicationFilter appenderId="Console"/>
+            </Filters>
+        </Console>
+
+        <!-- WebSocket追加器用于输出到ws客户端 -->
+        <WsClientAppender name="WsClientAppender">
+            <PatternLayout pattern="[%t] [%level] %msg%n" charset="UTF-8"/>
+            <!-- 使用自定义去重 Filters -->
+            <Filters>
+                <DeduplicationFilter appenderId="WsClientAppender"/>
+            </Filters>
+        </WsClientAppender>
+
+        <!-- SQL追加器用于输出到控制台 -->
+        <SqlAppender name="SqlAppender" level="warn" enabled="true">
+            <!-- 定义SQL日志的布局 -->
+            <PatternLayout pattern="%msg" charset="UTF-8"/>
+        </SqlAppender>
+    </Appenders>
+
+    <!-- 定义日志记录器及其追加器 -->
+    <Loggers>
+        <!-- ******************排除的日志****************** -->
+        <!-- 设置 Reflections 的日志级别为 OFF，屏蔽其所有日志 -->
+        <Logger name="org.reflections" level="off" additivity="false"/>
+        <!-- 设置 Jetty 相关的日志级别为 OFF，屏蔽其所有日志 -->
+        <Logger name="org.eclipse.jetty" level="off" additivity="false"/>
+        <!-- 设置 Flyway 相关的日志级别为 OFF，屏蔽其所有日志 -->
+        <Logger name="org.flywaydb" level="off" additivity="false"/>
+        <!-- 设置 Druid 相关的日志级别为 OFF，屏蔽其所有日志 -->
+        <Logger name="com.alibaba.druid" level="off" additivity="false"/>
+
+        <!-- SqlLog日志记录器 -->
+        <Logger name="cn.hutool.db.sql.SqlLog" level="debug" additivity="false">
+            <AppenderRef ref="SqlAppender"/>
+        </Logger>
+
+
+        <!-- ******************日志记录器****************** -->
+        <!-- 系统日志记录器 -->
+        <Logger name="SysLog" level="info" additivity="false">
+            <AppenderRef ref="SysLogFile"/>
+        </Logger>
+        <!-- 通信日志记录器 -->
+        <Logger name="CommunicateLog" level="info" additivity="false">
+            <AppenderRef ref="CommLogFile"/>
+        </Logger>
+        <!-- 通信其他日志记录器 -->
+        <Logger name="CommunicateOtherLog" level="info" additivity="false">
+            <AppenderRef ref="CommOtherLogFile"/>
+        </Logger>
+        <!-- 任务日志记录器 -->
+        <Logger name="TaskLog" level="info" additivity="false">
+            <AppenderRef ref="TaskLogFile"/>
+        </Logger>
+        <!-- 操作日志记录器 -->
+        <Logger name="OperateLog" level="info" additivity="false">
+            <AppenderRef ref="OperateLogFile"/>
+        </Logger>
+        <!-- 算法日志记录器 -->
+        <Logger name="AlgorithmLog" level="info" additivity="false">
+            <AppenderRef ref="AlgorithmLogFile"/>
+        </Logger>
+        <!-- HTTP日志记录器 -->
+        <Logger name="HttpLog" level="info" additivity="false">
+            <AppenderRef ref="HttpLogFile"/>
+        </Logger>
+        <!-- 关键帧日志记录器 -->
+        <Logger name="KeyFrameLog" level="info" additivity="false">
+            <AppenderRef ref="KeyFrameLogFile"/>
+        </Logger>
+
+        <!-- 根记录器配置 -->
+        <Root level="info" additivity="false">
+            <!-- 将控制台追加器附加到根记录器 -->
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="WsClientAppender"/>
+            <AppenderRef ref="ConsoleLogFile"/>
+        </Root>
+    </Loggers>
+
+</Configuration>

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <link rel="shortcut icon" href="/static/img/ruinap-logo.png" type="image/x-icon"/>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调度系统地址发布页</title>
+    <meta name="keywords" content="调度系统地址发布页">
+    <meta name="description" content="调度系统地址发布页">
+    <link rel="stylesheet" href="/static/release/index.css">
+    <link rel="stylesheet" href="/static/release/new.css">
+    <link rel="stylesheet" href="/static/release/mdui.min.css" media="">
+</head>
+<body class="mdui-color-blue"
+      style="background-size:100%;background-repeat:no-repeat; background-image: url('/static/release/bg-1.jpg');background-attachment:fixed;">
+<div class="box mdui-shadow-3">
+    <h1>地址发布页</h1>
+    <div class="center">
+        <img src="/static/img/ruinap.png" width="320" height="100" alt="logo">
+    </div>
+
+    <p class="mdui-shadow-3">可按 Ctrl + D 收藏本页到浏览器收藏夹 </p>
+    <ul class="speedlist">
+        <li th:each="release : ${releaseList}">
+            <i class="ms0" th:class="${release.li_i_class}">
+                线路延迟：<i id="lineMs0" th:id="${release.li_i_id}" th:text="${release.delayValue}">loading</i>
+            </i>
+            <span th:text="${release.li_span_content}">/console</span>
+            <a th:href="${release.li_a_href}" target="_blank" th:title="${release.li_a_title}" class="mdui-shadow-3">
+                <strong th:text="${release.li_a_strong}">调度控制台</strong>
+            </a>
+        </li>
+    </ul>
+</div>
+<div class="footer mdui-shadow-3">
+    <b>© Powered ruinap. All Rights Reserved</b>
+</div>
+
+<script type="text/javascript" src="/static/release/mdui.min.js"></script>
+<script type="text/javascript" src="/static/release/ms.js"></script>
+</body>
+</html>

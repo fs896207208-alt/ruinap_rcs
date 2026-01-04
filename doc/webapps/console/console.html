@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" href="/static/img/ruinap-logo.png" type="image/x-icon"/>
+    <title>调度系统客户端</title>
+    <style>
+        /* 重置所有元素的盒模型、边距和内边距 */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* 设置 HTML 和 body 的整体样式，确保居中显示 */
+        html, body {
+            width: 100%; /* 宽度占满屏幕 */
+            height: 100%; /* 高度占满屏幕 */
+            font-family: 'Helvetica Neue', Arial, sans-serif; /* 设置字体 */
+            color: #333; /* 文字颜色为深灰色 */
+            display: flex; /* 使用 flex 布局 */
+            justify-content: center; /* 水平居中 */
+            align-items: center; /* 垂直居中 */
+            min-height: 100vh; /* 最小高度为视口高度 */
+            padding: 20px; /* 内边距 20px */
+            background: #f4f7fa url(/static/img/bg.jpg); /* 背景颜色为浅灰蓝色 */
+        }
+
+        /* 头部样式，包含 logo 和标题 */
+        .header {
+            display: flex; /* 使用 flex 布局 */
+            align-items: center; /* 垂直居中对齐 */
+            justify-content: space-between; /* 两端对齐 */
+            /*background-color: #ffffff; !* 背景颜色为白色 *!*/
+            margin-bottom: 10px; /* 下方外边距 10px */
+        }
+
+        /* 头部中的图片样式（logo） */
+        .header img {
+            width: 320px; /* 图片宽度 */
+            height: 100px; /* 图片高度 */
+            margin-right: 20px; /* 右侧外边距 20px */
+        }
+
+        /* 头部标题样式，居中显示 */
+        .header h1 {
+            position: absolute; /* 绝对定位 */
+            left: 50%; /* 水平居中 */
+            transform: translateX(-50%); /* 偏移调整使其完全居中 */
+            font-size: 28px; /* 字体大小 */
+            color: #122868; /* 文字颜色为深蓝色 */
+            margin: 0; /* 清除外边距 */
+            text-align: center; /* 文字居中 */
+        }
+
+        /* 底部样式，显示版权信息 */
+        .footer {
+            width: 650px; /* 固定宽度 */
+            text-align: center; /* 文字居中 */
+            color: #a9a9a9; /* 文字颜色为灰色 */
+            padding: 5px 5px; /* 上下左右内边距 5px */
+            border-radius: 8px; /* 圆角 8px */
+            margin: 0 auto; /* 水平居中 */
+        }
+
+        /* 底部粗体文字样式 */
+        .footer b {
+            font-size: 15px; /* 字体大小 */
+            font-family: Roboto, Noto, Helvetica, Arial, sans-serif; /* 字体 */
+        }
+
+        /* 主容器样式，包含所有内容 */
+        .container {
+            display: flex; /* 使用 flex 布局 */
+            flex-direction: column; /* 垂直排列子元素 */
+            border-radius: 10px; /* 圆角 10px */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* 阴影效果 */
+            height: 95%; /* 高度占父元素的 95% */
+            width: 95%; /* 宽度占父元素的 95% */
+            padding: 20px 20px 0 20px; /* 内边距，上 20px，左右 20px，下 0 */
+            margin: auto; /* 居中显示 */
+            background: #f4f7fa url(/static/img/bg_point.png);
+            background-color: white; /* 背景颜色为白色 */
+        }
+
+        /* 状态显示区域样式 */
+        #status {
+            text-align: center; /* 文字居中 */
+            width: 100%; /* 宽度占满容器 */
+            margin: 10px 0; /* 上下外边距 10px */
+            font-size: 16px; /* 字体大小 */
+            color: #4CAF50; /* 文字颜色为绿色 */
+        }
+
+        /* WebSocket 控制区域样式 */
+        .ws-controls {
+            display: flex; /* 使用 flex 布局 */
+            justify-content: center; /* 水平居中 */
+            align-items: center; /* 垂直居中 */
+            width: 100%; /* 宽度占满容器 */
+        }
+
+        /* WebSocket 地址输入框样式 */
+        #wsAddress {
+            width: calc(100% - 190px); /* 宽度为容器宽度减去按钮宽度和间距 */
+            padding: 10px; /* 内边距 10px */
+            border: 1px solid #ccc; /* 边框为 1px 灰色 */
+            border-radius: 5px; /* 圆角 5px */
+            font-size: 16px; /* 字体大小 */
+            background: #f4f7fa url(/static/img/bg_point.png);
+            background-color: #fafafa; /* 背景颜色为浅灰色 */
+        }
+
+        /* 连接和断开按钮的共用样式 */
+        #connectBtn, #disconnectBtn {
+            width: 80px; /* 固定宽度 */
+            padding: 10px; /* 内边距 10px */
+            background-color: #4CAF50; /* 背景颜色为绿色 */
+            color: white; /* 文字颜色为白色 */
+            border: none; /* 无边框 */
+            border-radius: 5px; /* 圆角 5px */
+            font-size: 16px; /* 字体大小 */
+            cursor: pointer; /* 鼠标悬停时显示手型 */
+            margin-left: 5px; /* 左侧外边距 5px */
+        }
+
+        /* 断开按钮的特定样式 */
+        #disconnectBtn {
+            background-color: #f44336; /* 背景颜色为红色 */
+        }
+
+        /* 禁用状态下的按钮样式 */
+        button:disabled {
+            background-color: #f0f0f0; /* 背景颜色为浅灰色 */
+            color: #aaaaaa; /* 文字颜色为灰色 */
+            border: 1px solid #cccccc; /* 边框为 1px 灰色 */
+            cursor: not-allowed !important; /* 鼠标显示禁止符号 */
+            box-shadow: none; /* 移除阴影 */
+            opacity: 0.6; /* 透明度 60% */
+        }
+
+        /* 禁用状态下按钮的悬停效果 */
+        button:hover:disabled {
+            background-color: #f0f0f0; /* 保持浅灰色背景 */
+            color: #aaaaaa; /* 保持灰色文字 */
+            cursor: not-allowed; /* 保持禁止符号 */
+        }
+
+        /* 按钮悬停时的效果 */
+        button:hover {
+            opacity: 0.9; /* 透明度 90% */
+        }
+
+        /* 消息显示区域样式 */
+        #messages {
+            flex: 1; /* 占用剩余空间 */
+            width: 100%; /* 宽度占满容器 */
+            padding: 10px; /* 内边距 10px */
+            border: 1px solid #ccc; /* 边框为 1px 灰色 */
+            border-radius: 5px; /* 圆角 5px */
+            overflow-y: auto; /* 垂直溢出时显示滚动条 */
+            font-size: 14px; /* 字体大小 */
+            resize: both; /* 允许水平和垂直调整大小 */
+            white-space: pre-wrap; /* 保留换行和空格 */
+            background: #f4f7fa url(/static/img/bg_point.png);
+            background-color: #fafafa; /* 背景颜色为浅灰色 */
+        }
+
+        /* 消息通用样式 */
+        .message {
+            display: block; /* 块级元素 */
+            clear: both; /* 清除浮动 */
+            max-width: 70%; /* 最大宽度 70% */
+            border-radius: 5px; /* 圆角 5px */
+            font-family: 'Helvetica Neue', Arial, sans-serif; /* 字体 */
+        }
+
+        /* 服务器消息样式 */
+        .message.server {
+            float: left; /* 左浮动 */
+            text-align: left; /* 文字左对齐 */
+            color: #007BFF; /* 文字颜色为蓝色 */
+            cursor: pointer; /* 双击时显示手型光标，表示可交互 */
+        }
+
+        /* 用户消息样式 */
+        .message.you {
+            float: right; /* 右浮动 */
+            padding: 10px; /* 内边距 10px */
+            margin-bottom: 10px; /* 下方外边距 10px */
+            background-color: #dff0d8; /* 背景颜色为浅绿色 */
+            text-align: left; /* 文字左对齐 */
+            color: green; /* 文字颜色为绿色 */
+            cursor: pointer; /* 双击时显示手型光标，表示可交互 */
+        }
+
+        /* 可选：双击时的视觉反馈 */
+        .message:active {
+            background-color: #cce5c4; /* 双击时稍微变暗 */
+        }
+
+        /* 消息输入框样式 */
+        #messageInput {
+            width: 100%; /* 宽度占满容器 */
+            height: 100px; /* 固定高度 */
+            padding: 10px; /* 内边距 10px */
+            margin-bottom: 10px; /* 下方外边距 10px */
+            border: 1px solid #ccc; /* 边框为 1px 灰色 */
+            border-radius: 5px; /* 圆角 5px */
+            resize: none; /* 禁止调整大小 */
+            font-size: 14px; /* 字体大小 */
+            font-family: 'Helvetica Neue', Arial, sans-serif; /* 字体 */
+            text-align: left; /* 文字左对齐 */
+            white-space: pre-wrap; /* 保留换行和空格 */
+            background: #f4f7fa url(/static/img/bg_point.png);
+            background-color: #fafafa; /* 背景颜色为浅灰色 */
+        }
+
+        /* 输入错误时的样式 */
+        .input-error {
+            border-color: red !important; /* 边框颜色为红色 */
+            background-color: #ffe6e6 !important; /* 背景颜色为浅红色 */
+        }
+
+        /* 输入错误提示文字样式 */
+        #inputError {
+            text-align: center; /* 文字居中 */
+            color: red; /* 文字颜色为红色 */
+            font-size: 14px; /* 字体大小 */
+            margin-bottom: 10px; /* 下方外边距 10px */
+            display: none; /* 默认隐藏 */
+        }
+
+        /* 发送按钮样式 */
+        button.send-btn {
+            width: 100%; /* 宽度占满容器 */
+            padding: 10px; /* 内边距 10px */
+            background-color: #122868; /* 背景颜色为深蓝色 */
+            color: white; /* 文字颜色为白色 */
+            border: none; /* 无边框 */
+            border-radius: 5px; /* 圆角 5px */
+            font-size: 18px; /* 字体大小 */
+            cursor: pointer; /* 鼠标悬停时显示手型 */
+        }
+
+        /* 发送按钮悬停效果 */
+        button.send-btn:hover {
+            background-color: #152f7a; /* 背景颜色变为稍浅的蓝色 */
+        }
+
+        /* 调整大小的手柄样式 */
+        #resizeHandle {
+            height: 10px; /* 固定高度 */
+            cursor: ns-resize; /* 鼠标显示垂直调整大小的箭头 */
+            width: 100%; /* 宽度占满容器 */
+        }
+
+        /* 调整大小手柄悬停效果 */
+        #resizeHandle:hover {
+            background-color: #f4f4f4; /* 背景颜色为浅灰色 */
+        }
+
+        /* 响应式设计：屏幕宽度小于 768px 时的样式 */
+        @media (max-width: 768px) {
+            .container {
+                width: 95%; /* 容器宽度调整为 95% */
+            }
+
+            h1 {
+                font-size: 22px; /* 标题字体大小减小 */
+            }
+
+            #messages {
+                height: 200px; /* 消息区域固定高度 */
+            }
+        }
+
+        /* 响应式设计：屏幕宽度小于 480px 时的样式 */
+        @media (max-width: 480px) {
+            #wsAddress {
+                width: calc(100% - 160px); /* 输入框宽度调整 */
+            }
+
+            #connectBtn, #disconnectBtn {
+                width: 70px; /* 按钮宽度减小 */
+                font-size: 14px; /* 字体大小减小 */
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <img class="logo" src="/static/img/ruinap.png" width="230" height="80" alt="logo">
+        <h1>调度系统客户端</h1>
+    </div>
+
+    <div class="ws-controls">
+        <input type="text" id="wsAddress" placeholder="请输入 WebSocket 服务器地址"
+               value="ws://127.0.0.1:9091/websocket/console/web1"/>
+        <button id="connectBtn" onclick="connectWebSocket()">连接</button>
+        <button id="disconnectBtn" onclick="disconnectWebSocket()" disabled>断开</button>
+    </div>
+
+    <p id="status" style="color: red">未连接</p>
+
+    <div id="messages" title="双击鼠标左键复制内容到剪贴板与输入框"></div>
+
+    <div id="resizeHandle" title="鼠标按住左键拖动调整高度"></div>
+
+    <textarea id="messageInput" placeholder="输入您的消息..." disabled></textarea>
+    <p id="inputError">内容不能为空</p>
+
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>发送消息</button>
+
+    <div class="footer mdui-shadow-3">
+        <b>© Powered lisen. All Rights Reserved</b>
+    </div>
+</div>
+
+<!-- JavaScript 部分：实现 WebSocket 连接、消息发送和界面交互逻辑 -->
+<script>
+    /* 定义全局变量 */
+    let socket; /* WebSocket 对象 */
+    const statusElement = document.getElementById('status'); /* 状态显示元素 */
+    const messagesElement = document.getElementById('messages'); /* 消息显示区域 */
+    const messageInput = document.getElementById('messageInput'); /* 消息输入框 */
+    const wsAddressInput = document.getElementById('wsAddress'); /* WebSocket 地址输入框 */
+    const connectBtn = document.getElementById('connectBtn'); /* 连接按钮 */
+    const disconnectBtn = document.getElementById('disconnectBtn'); /* 断开按钮 */
+    const sendBtn = document.getElementById('sendBtn'); /* 发送按钮 */
+    const inputErrorElement = document.getElementById('inputError'); /* 输入错误提示 */
+    let hostname = window.location.hostname; /* 获取当前主机名 */
+
+    let autoScroll = true; /* 是否自动滚动消息 */
+    let messagesQueue = []; /* 消息队列 */
+    const maxMessages = 2000; /* 最大消息数量 */
+    let isSelecting = false; /* 是否正在选择文本 */
+
+    /* 拖拽调整大小相关变量 */
+    let isResizing = false; /* 是否正在调整大小 */
+    let startY; /* 拖拽起始 Y 坐标 */
+    let startHeight; /* 输入框初始高度 */
+
+    /* 页面加载完成后执行，设置默认 WebSocket 地址 */
+    document.addEventListener("DOMContentLoaded", function () {
+        document.getElementById("wsAddress").value = "ws://" + hostname + ":9091/websocket/console/web1";
+
+        // 添加欢迎语
+        const welcomeText1 = "░███████████░░░█████░░█████░█████░██████░░░█████░░░█████████░░░███████████░ \n";
+        const welcomeText2 = "░░███░░░░░███░░░███░░░░███░░░███░░░██████░░░███░░░███░░░░░███░░░███░░░░░███ \n";
+        const welcomeText3 = "░░███░░░░░███░░░███░░░░███░░░███░░░███░███░░███░░░███░░░░░███░░░███░░░░░███ \n";
+        const welcomeText4 = "░░██████████░░░░███░░░░███░░░███░░░███░░███░███░░░███████████░░░██████████░ \n";
+        const welcomeText5 = "░░███░░░░░███░░░███░░░░███░░░███░░░███░░░██████░░░███░░░░░███░░░███░░░░░░░░ \n";
+        const welcomeText6 = "░░███░░░░░███░░░███░░░░███░░░███░░░███░░░░█████░░░███░░░░░███░░░███░░░░░░░░ \n";
+        const welcomeText7 = "░█████░░░█████░░░████████░░░█████░█████░░░░█████░█████░░░█████░█████░░░░░░░ \n\n";
+
+        const welcomeText8 = "欢迎使用调度系统客户端，请点击【连接】按钮连接服务端";
+        const welcomeMessage1 = `${welcomeText1}`;
+        const welcomeMessage2 = `${welcomeText2}`;
+        const welcomeMessage3 = `${welcomeText3}`;
+        const welcomeMessage4 = `${welcomeText4}`;
+        const welcomeMessage5 = `${welcomeText5}`;
+        const welcomeMessage6 = `${welcomeText6}`;
+        const welcomeMessage7 = `${welcomeText7}`;
+        const welcomeMessage8 = `${welcomeText8}`;
+        messagesQueue.push({message: welcomeMessage1, isServer: true});
+        messagesQueue.push({message: welcomeMessage2, isServer: true});
+        messagesQueue.push({message: welcomeMessage3, isServer: true});
+        messagesQueue.push({message: welcomeMessage4, isServer: true});
+        messagesQueue.push({message: welcomeMessage5, isServer: true});
+        messagesQueue.push({message: welcomeMessage6, isServer: true});
+        messagesQueue.push({message: welcomeMessage7, isServer: true});
+        messagesQueue.push({message: welcomeMessage8, isServer: true});
+        renderMessages();
+    });
+
+    /* 鼠标进入消息区域时，暂停自动滚动 */
+    messagesElement.addEventListener('mouseenter', () => {
+        autoScroll = false;
+    });
+
+    /* 鼠标离开消息区域时，恢复自动滚动 */
+    messagesElement.addEventListener('mouseleave', () => {
+        autoScroll = true;
+        if (!isSelecting) {
+            messagesElement.scrollTop = messagesElement.scrollHeight; /* 滚动到底部 */
+        }
+    });
+
+    /* 鼠标按下时，表示可能开始选择文本 */
+    messagesElement.addEventListener('mousedown', () => {
+        isSelecting = true;
+    });
+
+    /* 鼠标松开时，表示选择结束 */
+    messagesElement.addEventListener('mouseup', () => {
+        isSelecting = false;
+    });
+
+    /* WebSocket 地址输入变化时，更新状态 */
+    wsAddressInput.addEventListener('input', () => {
+        statusElement.textContent = '未连接'; /* 显示未连接状态 */
+        statusElement.style.color = 'red'; /* 状态文字为红色 */
+        wsAddressInput.classList.remove('input-error'); /* 移除错误样式 */
+    });
+
+    /* 为调整大小手柄添加拖拽事件监听 */
+    const resizeHandle = document.getElementById('resizeHandle');
+    resizeHandle.addEventListener('mousedown', startResizing); /* 鼠标按下时开始调整 */
+    document.addEventListener('mousemove', resize); /* 鼠标移动时调整大小 */
+    document.addEventListener('mouseup', stopResizing); /* 鼠标松开时停止调整 */
+
+    /* 开始调整大小，记录初始状态 */
+    function startResizing(e) {
+        isResizing = true; /* 标记正在调整 */
+        startY = e.clientY; /* 记录鼠标 Y 坐标 */
+        startHeight = parseInt(window.getComputedStyle(messageInput).height, 10); /* 记录输入框初始高度 */
+        messageInput.style.transition = 'none'; /* 禁用过渡效果 */
+    }
+
+    /* 根据鼠标移动调整输入框高度 */
+    function resize(e) {
+        if (!isResizing) return; /* 如果未在调整，则退出 */
+        const dy = e.clientY - startY; /* 计算鼠标移动距离 */
+        const newHeight = startHeight - dy; /* 计算新高度（向下拖动减少高度） */
+        if (newHeight > 50) { /* 限制最小高度为 50px */
+            messageInput.style.height = `${newHeight}px`; /* 设置新高度 */
+        }
+    }
+
+    /* 停止调整大小 */
+    function stopResizing() {
+        if (isResizing) {
+            isResizing = false; /* 标记调整结束 */
+            messageInput.style.transition = 'height 0.3s'; /* 恢复过渡效果 */
+        }
+    }
+
+    /* 获取当前时间戳，格式为 MM-DD HH:MM:SS.mmm */
+    function getTimePrefix() {
+        const now = new Date(); /* 获取当前时间 */
+        const month = (now.getMonth() + 1).toString().padStart(2, '0'); /* 月份（补零） */
+        const day = now.getDate().toString().padStart(2, '0'); /* 日期（补零） */
+        const hours = now.getHours().toString().padStart(2, '0'); /* 小时（补零） */
+        const minutes = now.getMinutes().toString().padStart(2, '0'); /* 分钟（补零） */
+        const seconds = now.getSeconds().toString().padStart(2, '0'); /* 秒（补零） */
+        const milliseconds = now.getMilliseconds().toString().padStart(3, '0'); /* 毫秒（补零） */
+        return `${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`; /* 返回格式化时间 */
+    }
+
+    /* 连接 WebSocket */
+    function connectWebSocket() {
+        // 清空欢迎语
+        messagesQueue = []; // 重置消息队列
+        messagesElement.innerHTML = ''; // 清空消息区域
+        renderMessages();
+
+        const wsAddress = wsAddressInput.value.trim(); /* 获取并清理输入的地址 */
+        if (!wsAddress) { /* 如果地址为空 */
+            statusElement.textContent = '地址不能为空'; /* 显示错误提示 */
+            statusElement.style.color = 'red'; /* 状态文字为红色 */
+            wsAddressInput.classList.add('input-error'); /* 添加错误样式 */
+            wsAddressInput.focus(); /* 输入框获取焦点 */
+            return;
+        }
+
+        wsAddressInput.classList.remove('input-error'); /* 移除错误样式 */
+
+        try {
+            socket = new WebSocket(wsAddress); /* 创建 WebSocket 连接 */
+
+            /* WebSocket 连接成功时的处理 */
+            socket.onopen = function () {
+                statusElement.textContent = '已连接'; /* 显示已连接状态 */
+                statusElement.style.color = '#4CAF50'; /* 状态文字为绿色 */
+                connectBtn.disabled = true; /* 禁用连接按钮 */
+                disconnectBtn.disabled = false; /* 启用断开按钮 */
+                sendBtn.disabled = false; /* 启用发送按钮 */
+                messageInput.disabled = false; /* 启用消息输入框 */
+            };
+
+            /* 收到消息时的处理 */
+            socket.onmessage = function (event) {
+                const messageContent = `[${getTimePrefix()}] ${event.data}`; /* 格式化消息内容 */
+                messagesQueue.push({message: messageContent, isServer: true}); /* 添加到消息队列 */
+                if (messagesQueue.length > maxMessages) { /* 如果超出最大消息数 */
+                    messagesQueue.shift(); /* 移除最早的消息 */
+                }
+                if (!isSelecting) { /* 如果未在选择文本 */
+                    renderMessages(); /* 渲染消息 */
+                }
+            };
+
+            /* WebSocket 连接关闭时的处理 */
+            socket.onclose = function () {
+                if (statusElement.textContent !== '已连接') return; /* 如果未连接状态已更新，则退出 */
+                statusElement.textContent = '连接已断开'; /* 显示断开状态 */
+                statusElement.style.color = 'red'; /* 状态文字为红色 */
+                connectBtn.disabled = false; /* 启用连接按钮 */
+                disconnectBtn.disabled = true; /* 禁用断开按钮 */
+                sendBtn.disabled = true; /* 禁用发送按钮 */
+                messageInput.disabled = true; /* 禁用消息输入框 */
+            };
+
+            /* WebSocket 连接错误时的处理 */
+            socket.onerror = function () {
+                statusElement.textContent = '连接失败，请检查 WebSocket 地址'; /* 显示错误提示 */
+                statusElement.style.color = 'red'; /* 状态文字为红色 */
+                wsAddressInput.classList.add('input-error'); /* 添加错误样式 */
+            };
+        } catch (e) {
+            statusElement.textContent = '连接失败，URL 格式无效'; /* 显示格式错误提示 */
+            statusElement.style.color = 'red'; /* 状态文字为红色 */
+            wsAddressInput.classList.add('input-error'); /* 添加错误样式 */
+        }
+    }
+
+    /* 断开 WebSocket 连接 */
+    function disconnectWebSocket() {
+        if (socket && socket.readyState === WebSocket.OPEN) { /* 如果连接存在且处于打开状态 */
+            socket.close(); /* 关闭连接 */
+        }
+    }
+
+    /* 发送消息 */
+    function sendMessage() {
+        const message = messageInput.value.trim(); /* 获取并清理输入的消息 */
+        if (message === "") { /* 如果消息为空 */
+            inputErrorElement.style.display = 'block'; /* 显示错误提示 */
+            messageInput.classList.add('input-error'); /* 添加错误样式 */
+            return;
+        }
+
+        if (socket && socket.readyState === WebSocket.OPEN) { /* 如果连接存在且打开 */
+            socket.send(message); /* 发送消息 */
+            const formattedMessage = `[${getTimePrefix()}]\n ${message}`; /* 格式化消息 */
+            messagesQueue.push({message: formattedMessage, isServer: false}); /* 添加到消息队列 */
+            if (messagesQueue.length > maxMessages) { /* 如果超出最大消息数 */
+                messagesQueue.shift(); /* 移除最早的消息 */
+            }
+            renderMessages(); /* 渲染消息 */
+            messageInput.value = ''; /* 清空输入框 */
+            inputErrorElement.style.display = 'none'; /* 隐藏错误提示 */
+            messageInput.classList.remove('input-error'); /* 移除错误样式 */
+        }
+    }
+
+    /**
+     * 渲染消息到页面，使用增量更新方式优化性能
+     */
+    function renderMessages() {
+        const fragment = document.createDocumentFragment(); // 创建文档片段，用于批量添加 DOM 节点，减少重绘和回流
+        const currentMessageCount = messagesElement.children.length; // 获取当前页面上已渲染的消息数量
+
+        // 只处理新增或需要更新的消息，避免重新渲染已有消息
+        if (currentMessageCount < messagesQueue.length) {
+            // 从当前已渲染的消息数量开始，遍历消息队列中的新消息
+            for (let i = currentMessageCount; i < messagesQueue.length; i++) {
+                const {message, isServer} = messagesQueue[i]; // 解构获取消息内容和来源（服务器或用户）
+                const messageElement = document.createElement('div'); // 创建新的消息 DOM 元素
+                messageElement.classList.add('message', isServer ? 'server' : 'you'); // 添加基础类和来源特定类（server 或 you）
+                messageElement.textContent = message; // 设置消息文本内容
+
+                // 如果是消息，添加双击复制功能
+                if (isServer || !isServer) {
+                    messageElement.addEventListener('dblclick', () => {
+                        // 提取时间戳后的内容
+                        const content = message.replace(/^\[\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]\s*/, '').trim();
+                        navigator.clipboard.writeText(content)
+                            .then(() => {
+                                const messageInput = document.getElementById('messageInput');
+                                messageInput.value = content;
+                            })
+                            .catch(err => {
+                                console.error('复制失败:', err);
+                            });
+                    });
+                }
+
+                fragment.appendChild(messageElement); // 将消息元素添加到文档片段中
+            }
+            messagesElement.appendChild(fragment); // 一次性将所有新消息添加到消息容器中
+        }
+
+        // 处理消息超出最大数量的情况，移除最早的消息
+        while (messagesElement.children.length > maxMessages) {
+            messagesElement.removeChild(messagesElement.firstChild); // 删除第一个（最旧的）消息元素
+        }
+
+        // 如果启用了自动滚动且用户未选中文本，则滚动到消息底部
+        if (autoScroll && !isSelecting) {
+            messagesElement.scrollTop = messagesElement.scrollHeight; // 设置滚动位置到容器底部
+        }
+    }
+
+    /**
+     * 防抖函数，用于延迟执行回调，减少频繁触发的开销
+     * @param {Function} func - 需要防抖的函数
+     * @param {number} wait - 延迟时间（毫秒）
+     * @returns {Function} - 返回一个经过防抖处理的函数
+     */
+    function debounce(func, wait) {
+        let timeout; // 保存定时器 ID
+        return function executedFunction(...args) { // 返回的函数接收任意参数
+            const later = () => { // 定义延迟执行的函数
+                clearTimeout(timeout); // 清除之前的定时器
+                func(...args); // 执行原始函数，传入参数
+            };
+            clearTimeout(timeout); // 在每次调用时清除上一次的定时器
+            timeout = setTimeout(later, wait); // 设置新的定时器，延迟执行
+        };
+    }
+
+    /**
+     * 处理消息输入框的 input 事件，使用防抖优化
+     * 当用户输入时，延迟 500ms 后清除错误提示和样式
+     */
+    const debouncedInputHandler = debounce(() => {
+        inputErrorElement.style.display = 'none'; // 隐藏错误提示元素
+        messageInput.classList.remove('input-error'); // 移除输入框的错误样式
+    }, 500); // 设置 500ms 的防抖延迟
+
+    /* 输入框内容变化时，清除错误提示 */
+    messageInput.addEventListener('input', debouncedInputHandler);
+</script>
+</body>
+</html>

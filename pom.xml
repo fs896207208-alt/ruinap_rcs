@@ -1,0 +1,499 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 项目坐标：groupId + artifactId + version 唯一标识项目 -->
+    <groupId>com.ruinap</groupId>
+    <artifactId>ruinap_rcs</artifactId>
+    <version>4.0</version>
+
+    <properties>
+        <!-- 使用 Java 21 编译 -->
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <!-- 源码编码，避免中文乱码 -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- AspectJ 版本，用于 AOP 切面编程 -->
+        <aspectj.version>1.9.24</aspectj.version>
+        <!-- Netty 网络框架版本 -->
+        <netty.version>4.1.130.Final</netty.version>
+    </properties>
+
+    <dependencies>
+        <!-- 1. AspectJ 运行时依赖：支持 AOP 切面编程 -->
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjrt</artifactId>
+            <version>${aspectj.version}</version>
+        </dependency>
+
+        <!-- 2. Reflections：运行时扫描类、方法、注解等 -->
+        <dependency>
+            <groupId>org.reflections</groupId>
+            <artifactId>reflections</artifactId>
+            <version>0.10.2</version>
+        </dependency>
+
+        <!-- 3. Hutool：Java 工具类库，简化开发 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+            <version>5.8.41</version>
+        </dependency>
+
+        <!-- 4. Druid：阿里巴巴数据库连接池，监控 SQL 执行 -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>druid</artifactId>
+            <version>1.2.27</version>
+        </dependency>
+
+        <!-- 5. Protobuf：Google 的高效序列化框架 -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>4.28.2</version>
+        </dependency>
+        <!-- 6. MySQL 驱动：注意版本 9.x 对应 MySQL 8+，协议有变化 -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>9.3.0</version>
+        </dependency>
+
+        <!-- 7. Flyway：数据库版本管理，自动化 SQL 迁移 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <version>7.15.0</version>
+        </dependency>
+
+        <!-- 8. Log4j2 日志框架依赖 -->
+        <!-- log4j-api：日志接口 -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>2.25.3</version>
+            <!-- 排除 log4j-core，避免版本冲突 -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.logging.log4j</groupId>
+                    <artifactId>log4j-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- log4j-core：日志实现 -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>2.25.3</version>
+        </dependency>
+        <!-- log4j-jcl：桥接 Commons Logging 到 Log4j2 -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-jcl</artifactId>
+            <version>2.25.3</version>
+        </dependency>
+        <!-- log4j-slf4j-impl：桥接 SLF4J 到 Log4j2 -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
+            <version>2.25.3</version>
+        </dependency>
+        <!-- Disruptor：高性能无锁队列，用于 Log4j2 异步日志 -->
+        <dependency>
+            <groupId>com.lmax</groupId>
+            <artifactId>disruptor</artifactId>
+            <version>3.4.4</version>
+        </dependency>
+
+        <!-- 9. Netty：高性能 NIO 网络框架 -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>${netty.version}</version>
+        </dependency>
+        <!-- Netty MQTT 编解码器，用于物联网协议支持 -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-codec-mqtt</artifactId>
+            <version>${netty.version}</version>
+        </dependency>
+
+        <!-- 10. Jetty：嵌入式 Web 容器 -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>9.4.57.v20241219</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-servlet</artifactId>
+            <version>9.4.57.v20241219</version>
+        </dependency>
+        <!-- Servlet API，注意 3.1.0 版本支持异步 -->
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>3.1.0</version>
+        </dependency>
+
+        <!-- 11. Jackson：JSON/YAML 处理 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.18.0</version>
+        </dependency>
+        <!-- Jackson YAML 支持 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+            <version>2.18.0</version>
+        </dependency>
+
+        <!-- 12. OSHI：获取操作系统和硬件信息（CPU、内存、磁盘等） -->
+        <dependency>
+            <groupId>com.github.oshi</groupId>
+            <artifactId>oshi-core</artifactId>
+            <version>6.8.2</version>
+        </dependency>
+
+        <!-- 13. JTS：Java 拓扑套件，用于地理空间计算 -->
+        <dependency>
+            <groupId>org.locationtech.jts</groupId>
+            <artifactId>jts-core</artifactId>
+            <version>1.20.0</version>
+        </dependency>
+        <!-- JTS IO 支持（WKT、WKB 等格式） -->
+        <dependency>
+            <groupId>org.locationtech.jts.io</groupId>
+            <artifactId>jts-io-common</artifactId>
+            <version>1.20.0</version>
+        </dependency>
+
+        <!-- 14. Lombok：编译时代码生成（Getter/Setter等），注意 scope=provided -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.36</version>
+            <!-- provided 表示该依赖由 JDK 或容器提供，不打包进最终 Jar -->
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- 15. JUnit：单元测试框架 -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+        </dependency>
+        <!-- Mockito：模拟测试框架 -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.20.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Mockito Inline：支持模拟 final 类/方法（Java 15+） -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-inline</artifactId>
+            <version>5.2.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- 16. Graph4J：图算法库，用于路径规划等 -->
+        <dependency>
+            <groupId>org.graph4j</groupId>
+            <artifactId>graph4j</artifactId>
+            <version>1.0.8</version>
+        </dependency>
+
+        <!-- 17. Thymeleaf：现代模板引擎，用于 Web 页面渲染 -->
+        <dependency>
+            <groupId>org.thymeleaf</groupId>
+            <artifactId>thymeleaf</artifactId>
+            <version>3.1.3.RELEASE</version>
+        </dependency>
+
+        <!-- 18. H2数据库 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.4.240</version>
+        </dependency>
+
+        <!-- 19. Arthas阿尔萨斯：程序诊断工具 -->
+        <dependency>
+            <groupId>com.taobao.arthas</groupId>
+            <artifactId>arthas-agent-attach</artifactId>
+            <version>4.1.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.taobao.arthas</groupId>
+            <artifactId>arthas-packaging</artifactId>
+            <version>4.1.3</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- ============================================================
+                 1. Maven 编译器插件
+                 ============================================================ -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <!-- Java 21 编译目标 -->
+                    <source>21</source>
+                    <target>21</target>
+                    <!-- 源码编码 -->
+                    <encoding>UTF-8</encoding>
+                    <!-- 编译器参数 -->
+                    <compilerArgs>
+                        <!-- 关闭未检查警告（泛型相关） -->
+                        <arg>-Xlint:-unchecked</arg>
+                        <!-- 启用预览特性（如果使用 Java 预览功能） -->
+                        <arg>--enable-preview</arg>
+                        <!-- 指定源码版本 -->
+                        <arg>-source</arg>
+                        <arg>21</arg>
+                    </compilerArgs>
+                    <!-- 注解处理器路径：Lombok 和 Log4j2 的插件发现 -->
+                    <annotationProcessorPaths>
+                        <!-- Lombok 注解处理器 -->
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>1.18.34</version>
+                        </path>
+                        <!-- Log4j2 注解处理器（用于 @Plugin 注解） -->
+                        <path>
+                            <groupId>org.apache.logging.log4j</groupId>
+                            <artifactId>log4j-core</artifactId>
+                            <version>2.25.3</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <!-- ============================================================
+                 2. Maven Surefire 插件（测试执行）
+                 ============================================================ -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <!-- 使用较新版本以支持 Java 21 -->
+                <version>3.5.3</version>
+                <configuration>
+                    <!-- 打包时跳过测试，提高构建速度 -->
+                    <skipTests>true</skipTests>
+                    <!-- JVM 参数：
+                         -XX:+EnableDynamicAgentLoading：允许动态加载 Java Agent（如 AspectJ）
+                         -Xshare:off：关闭类数据共享，避免与某些工具冲突 -->
+                    <argLine>-XX:+EnableDynamicAgentLoading -Xshare:off</argLine>
+                </configuration>
+            </plugin>
+
+            <!-- ============================================================
+                 3. AspectJ Maven 插件（字节码织入）
+                 注意：这是构建过程中最复杂的插件之一，配置错误会导致类加载问题
+                 ============================================================ -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>aspectj-maven-plugin</artifactId>
+                <version>1.15.0</version>
+                <configuration>
+                    <!-- 与 Java 21 兼容 -->
+                    <complianceLevel>21</complianceLevel>
+                    <source>21</source>
+                    <target>21</target>
+                    <!-- 织入目录：指定已编译的类文件目录 -->
+                    <weaveDirectories>
+                        <weaveDirectory>${project.basedir}/target/classes</weaveDirectory>
+                    </weaveDirectories>
+                    <!-- 显示织入信息，便于调试 -->
+                    <showWeaveInfo>true</showWeaveInfo>
+                    <!-- 输出详细日志 -->
+                    <verbose>true</verbose>
+                    <!-- proc=none：禁用注解处理，避免与 Lombok 冲突 -->
+                    <proc>none</proc>
+                    <!-- 忽略警告 -->
+                    <Xlint>ignore</Xlint>
+                    <!-- 强制使用 AspectJ 编译器编译 -->
+                    <forceAjcCompile>true</forceAjcCompile>
+                    <!-- 跳过源码编译：因为我们已经用 javac 编译过了 -->
+                    <sources>
+                        <source/>
+                    </sources>
+                </configuration>
+                <executions>
+                    <execution>
+                        <!-- 在 process-classes 阶段执行（编译完成后） -->
+                        <phase>process-classes</phase>
+                        <goals>
+                            <!-- 执行织入（编译） -->
+                            <goal>compile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <dependencies>
+                    <!-- AspectJ 工具依赖 -->
+                    <dependency>
+                        <groupId>org.aspectj</groupId>
+                        <artifactId>aspectjtools</artifactId>
+                        <version>${aspectj.version}</version>
+                    </dependency>
+                    <!-- 确保 Netty 在类路径中，以便织入 Netty 相关的切面 -->
+                    <dependency>
+                        <groupId>io.netty</groupId>
+                        <artifactId>netty-all</artifactId>
+                        <version>${netty.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+
+            <!-- ============================================================
+                 4. Maven JAR 插件（生成基础 JAR）
+                 注意：这个 JAR 不会包含依赖，主要用于 Shade 插件处理
+                 ============================================================ -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <!-- 不添加 Maven 描述符，减少 JAR 大小 -->
+                        <addMavenDescriptor>false</addMavenDescriptor>
+                        <manifest>
+                            <!-- 添加实现和规范版本信息 -->
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                            <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
+                            <!-- 主类入口 -->
+                            <mainClass>com.ruinap.RcsApplication</mainClass>
+                        </manifest>
+                        <!-- 添加 Multi-Release 标记，支持多版本 JAR -->
+                        <manifestEntries>
+                            <Multi-Release>true</Multi-Release>
+                        </manifestEntries>
+                    </archive>
+                    <!-- 将默认 JAR 输出到临时目录，避免与最终 shaded JAR 冲突 -->
+                    <outputDirectory>${project.build.directory}/maven-temp</outputDirectory>
+                </configuration>
+            </plugin>
+
+            <!-- ============================================================
+                 5. Maven Shade 插件（构建胖包/可执行 JAR）
+                 这是最关键的打包插件，处理依赖合并和资源转换
+                 ============================================================ -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <!-- 在 package 阶段执行 -->
+                        <phase>package</phase>
+                        <goals>
+                            <!-- 生成 shaded JAR -->
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <!-- 不生成简化 POM -->
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <!-- 要排除的依赖 -->
+                            <artifactSet>
+                                <excludes>
+                                    <!-- 排除 BouncyCastle（可能因为许可证或版本冲突） -->
+                                    <exclude>org.bouncycastle:*</exclude>
+                                </excludes>
+                            </artifactSet>
+                            <!-- 资源过滤：排除不必要的文件，减小 JAR 体积 -->
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <!-- 排除模块描述文件（Java 9+ 模块化） -->
+                                        <exclude>module-info.class</exclude>
+                                        <!-- 排除签名文件 -->
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <!-- 排除许可证文件 -->
+                                        <exclude>META-INF/LICENSE*</exclude>
+                                        <exclude>META-INF/NOTICE*</exclude>
+                                        <!-- 排除依赖列表 -->
+                                        <exclude>META-INF/DEPENDENCIES</exclude>
+                                        <!-- 排除特定许可证 -->
+                                        <exclude>META-INF/AL2.0</exclude>
+                                        <exclude>META-INF/LGPL2.1</exclude>
+                                        <!-- 排除 Netty 版本属性文件 -->
+                                        <exclude>META-INF/io.netty.versions.properties</exclude>
+                                        <!-- 排除 Maven 元数据 -->
+                                        <exclude>META-INF/maven/**</exclude>
+                                        <!-- 排除索引文件 -->
+                                        <exclude>META-INF/INDEX.LIST</exclude>
+                                        <!-- 排除 HTML 文档 -->
+                                        <exclude>about.html</exclude>
+                                        <!-- 排除文本文件 -->
+                                        <exclude>META-INF/NOTICE.txt</exclude>
+                                        <exclude>META-INF/LICENSE.txt</exclude>
+                                        <!-- 排除原始清单文件 -->
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <!-- 排除 Log4j2 插件缓存文件（后续会合并） -->
+                                        <exclude>**/Log4j2Plugins.dat</exclude>
+                                        <!-- 排除 Jackson 服务文件（后续会合并） -->
+                                        <exclude>META-INF/services/com.fasterxml.jackson.core.JsonFactory</exclude>
+                                        <exclude>META-INF/services/com.fasterxml.jackson.core.ObjectCodec</exclude>
+                                        <!-- 排除多版本模块信息 -->
+                                        <exclude>META-INF/versions/9/module-info.class</exclude>
+                                        <exclude>META-INF/versions/11/module-info.class</exclude>
+                                        <!-- 排除所有版本模块信息 -->
+                                        <exclude>META-INF/versions/**/module-info.class</exclude>
+                                        <!-- 排除各种说明文件 -->
+                                        <exclude>readme.txt</exclude>
+                                        <exclude>README.txt</exclude>
+                                        <exclude>META-INF/README.txt</exclude>
+                                        <exclude>rootdoc.txt</exclude>
+                                        <!-- 排除 Git 属性 -->
+                                        <exclude>META-INF/git.properties</exclude>
+                                        <!-- 排除构建属性 -->
+                                        <exclude>build.properties</exclude>
+                                        <!-- 排除混淆配置 -->
+                                        <exclude>META-INF/proguard/**</exclude>
+                                        <!-- 排除许可证目录 -->
+                                        <exclude>META-INF/license/**</exclude>
+                                        <!-- 排除原生镜像配置 -->
+                                        <exclude>META-INF/native-image/**</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <!-- 资源转换器：处理合并冲突 -->
+                            <transformers>
+                                <!-- 合并所有 META-INF/services/ 下的服务文件 -->
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!-- 设置主类 -->
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.ruinap.RcsApplication</mainClass>
+                                </transformer>
+                                <!-- 合并 Log4j2 插件描述文件（多个依赖的插件需要合并） -->
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/org/apache/logging/log4j/core/config/plugins/Log4j2Plugins.dat
+                                    </resource>
+                                </transformer>
+                            </transformers>
+                            <!-- 最终 JAR 名称（不含版本号） -->
+                            <finalName>ruinap_rcs</finalName>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

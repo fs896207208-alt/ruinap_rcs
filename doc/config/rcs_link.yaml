@@ -1,0 +1,234 @@
+############################################################################################################################
+##                                                   AGV配置                                                              ##
+############################################################################################################################
+#AGV链接配置，调度系统启动后将读取该集合的所有AGV链接配置
+agv_link:
+  #AGV通用配置，一般都是AGV通用的功能
+  common:
+    #启用状态，设置为false则不读取AGV链接配置
+    #类型：Boolean
+    #默认值：true
+    enable: true
+    #设备类型，给所有AGV设置名称方便调度系统识别
+    #类型：String
+    #默认值：AGV
+    equipment_type: AGV
+    #仿真模式，设置为true则启动仿真模式
+    #类型：Boolean
+    #默认值：false
+    emulation: false
+    #通信协议
+    #类型：String
+    #默认值：ws_client
+    pact: ws_client
+    #品牌，支持不同品牌的AGV
+    #类型：String
+    #默认值：slamopto
+    brand: slamopto
+    #类型，不同类型的AGV可以接取的任务不一样，1潜伏式 2叉车式
+    #类型：int
+    #默认值：1
+    type: 1
+    #连接失败次数，超过该次数则将AGV设置为离线
+    #类型：int
+    #默认值：5
+    connect_failed: 5
+    #车距范围
+    #系统会将规划出来的路径，根据点位计算AGV和线段的距离，如果距离小于这个值，那么这个点位设置为车距占用
+    #示例：规划路径：1、2，配置=2000毫米，系统会遍历1点位2000毫米范围内是否有其他点位，如果有，那么这个点位设置为占用，然后遍历2点位2000毫米范围内是否有其他点位，如果有，那么这个点位设置为占用
+    #如果AGV比较大台，则填写AGV长度的一半，比如AGV长度为2米，那么填写1000
+    #换算：1000毫米 = 1米
+    #类型：int
+    #单位：半径毫米
+    #默认值：500
+    car_range: 500
+  #AGV链接集合
+  links:
+    #AGV唯一标识
+    1:
+      #通信协议，如果不填写，则使用通用配置
+      pact: ws_client
+      #品牌，不填写，则使用通用配置
+      brand: slamopto
+      #类型，不填写，则使用通用配置
+      type: 1
+      #连接失败次数，不填写，则使用通用配置
+      connect_failed: 50
+      #车距范围，不填写，则使用通用配置
+      car_range: 500
+      #AGV链接地址
+      #类型：String
+      #默认值：ws://127.0.0.1:8080
+      url: ws://111.229.220.93:81
+      #url: ws://192.168.150.172:10001
+#    2:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://192.168.50.172:10002
+#    3:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://192.168.50.172:10003
+#    4:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://192.168.50.172:10004
+#    5:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://192.168.50.172:10005
+#    6:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://192.168.50.172:10006
+#    7:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://192.168.50.172:10007
+#    8:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://192.168.50.172:10008
+#    9:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://192.168.50.172:10009
+#    10:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://192.168.50.172:10010
+#    2:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://47.97.215.157:8082
+#    3:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://47.97.215.157:8083
+#    4:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://47.97.215.157:8084
+#    5:
+#      pact: ws_client
+#      brand: slamopto
+#      type: 1
+#      connect_failed: 5
+#      url: ws://47.103.209.16:10005
+
+############################################################################################################################
+##                                                  充电桩配置                                                             ##
+############################################################################################################################
+#充电桩链接配置，调度系统启动后将读取该集合的所有充电桩链接配置
+charge_link:
+  #充电桩通用配置，一般都是充电桩通用的功能
+  common:
+    #启动状态，设置为false则不读取充电桩链接配置
+    #类型：Boolean
+    #默认值：true
+    enable: false
+    #设备类型，给所有充电桩设置名称方便调度系统识别
+    #类型：String
+    #默认值：ChargePile
+    equipment_type: ChargePile
+    #仿真模式，设置为true则启动仿真模式
+    #类型：Boolean
+    #默认值：false
+    emulation: false
+    #通信协议
+    #类型：String
+    #默认值：tcp_client
+    pact: tcp_client
+    #品牌，支持不同品牌的充电桩
+    #类型：String
+    #默认值：dingjian
+    brand: dingjian
+    #类型，不同类型的充电桩允许不同类型的AGV充电
+    #解释：0无限制 1潜伏式 2叉车式
+    #类型：String
+    #默认值：0
+    type: 1
+    #连接失败次数，超过该次数则将充电桩设置为离线
+    #类型：int
+    #默认值：5
+    connect_failed: 5
+  #充电桩链接集合
+  links:
+    #充电桩唯一标识
+    1:
+      #通信协议，如果不填写，则使用通用配置
+      pact: tcp_client
+      #品牌，不填写，则使用通用配置
+      brand: dingjian
+      #类型，不填写，则使用通用配置
+      type: 1
+      #连接失败次数，不填写，则使用通用配置
+      connect_failed: 5
+      #充电桩链接地址
+      #类型：String
+      #默认值：tcp://127.0.0.1:8100
+      url: tcp://192.168.142.1:8899
+
+############################################################################################################################
+##                                                 中转系统配置                                                            ##
+############################################################################################################################
+#中转系统链接配置，调度系统启动后将读取该集合的所有中转系统链接配置
+transfer_link:
+  #中转系统通用配置，一般都是中转系统通用的功能
+  common:
+    #启动状态，设置为false则不读取中转系统链接配置
+    #类型：Boolean
+    #默认值：true
+    enable: false
+    #设备类型，给所有中转系统设置名称方便调度系统识别
+    #类型：String
+    #默认值：Transfer
+    equipment_type: Transfer
+    #仿真模式，设置为true则启动仿真模式
+    #类型：Boolean
+    #默认值：false
+    emulation: false
+    #通信协议
+    #类型：String
+    #默认值：ws_client
+    pact: ws_client
+    #连接失败次数，超过该次数则将中转系统设置为离线
+    #类型：int
+    #默认值：5
+    connect_failed: 5
+  #中转系统链接集合
+  link:
+    #中转系统唯一标识
+    code: ZZ1
+    #通信协议，如果不填写，则使用通用配置
+    pact: ws_client
+    #连接失败次数，不填写，则使用通用配置
+    connect_failed: 5
+    #中转系统链接地址
+    #类型：String
+    #默认值：ws://127.0.0.1:8100
+    url: ws://127.0.0.1:9091/websocket/simulation/rcs1

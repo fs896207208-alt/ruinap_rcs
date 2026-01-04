@@ -1,0 +1,124 @@
+############################################################################################################################
+##                                              数据库通用配置                                                               ##
+  ############################################################################################################################
+  [ rcs_db ]
+  #数据库名称
+  # MySQL和 H2 共用数据库名称
+  #类型：String
+  #默认值：ruinap_rcs
+  db_name = ruinap_rcs
+  #数据库IP
+  #类型：String
+  #默认值：localhost
+  db_ip = 127.0.0.1
+  #数据库端口
+  #类型：String
+  #默认值：3306
+  db_port = 3306
+  
+  ############################################################################################################################
+  ##                                              H2数据库配置                                                                ##
+  ############################################################################################################################
+  [ rcs_db_h2 ]
+  #数据库连接地址
+  #建议使用默认值，修改database_name的数据即可
+  #jdbc:h2:file:... -> 文件模式
+  #CIPHER=AES -> 开启 AES-128 加密 (保护激活码)
+  #MODE=MySQL -> 兼容 MySQL 语法
+  #AUTO_SERVER=TRUE -> 自动混合模式 (允许调试工具在程序运行时同时连接该文件)
+  #类型：String
+  #默认值：jdbc:h2:file:./doc/h2db/${rcs_db.db_name};CIPHER=AES;MODE=MySQL;AUTO_SERVER=TRUE
+  url = jdbc:h2:file:./doc/h2db/${rcs_db.db_name};CIPHER=AES;MODE=MySQL;AUTO_SERVER=TRUE
+  #数据库用户名
+  #填写你安装数据库时设置的用户名
+  #类型：String
+  #默认值：root
+  username = root
+  #数据库密码
+  # H2数据库库要求的格式: "文件密钥 密码"
+  #类型：String
+  #默认值：root 123
+  password = root 123
+  #JDBC驱动名
+  #驱动请勿随意修改，除非你不再使用H2
+  #类型：String
+  #默认值：org.h2.Driver
+  driver = org.h2.Driver
+  
+  ############################################################################################################################
+  ##                                              MySQL数据库配置                                                             ##
+  ############################################################################################################################
+  [ rcs_db_mysql ]
+  #数据库连接地址
+  #建议使用默认值，修改database_name的数据即可
+  #类型：String
+  #默认值：jdbc:mysql://${rcs_db.db_ip}:${rcs_db.db_port}/${rcs_db.db_name}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2B8&rewriteBatchedStatements=true
+  url = jdbc:mysql://${rcs_db.db_ip}:${rcs_db.db_port}/${rcs_db.db_name}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2B8&rewriteBatchedStatements=true
+  #数据库和 Druid监控用户名
+  #填写你安装数据库时设置的用户名
+  #类型：String
+  #默认值：root
+  username = root
+  #数据库和 Druid监控密码
+  #填写你安装数据库时设置的密码
+  #类型：String
+  #默认值：123456
+  password = 123456
+  #Flyway指定数据库脚本的存放路径
+  #类型：String
+  #默认值：filesystem:./doc/sql
+  locations = filesystem:./doc/sql
+  #JDBC驱动名
+  #驱动请勿随意修改，除非你不再使用MySQL
+  #类型：String
+  #默认值：com.mysql.cj.jdbc.Driver
+  driver = com.mysql.cj.jdbc.Driver
+  
+  ############################################################################################################################
+  ##                                                    数据库连接池配置项                                                    ##
+  ############################################################################################################################
+  #连接池如果你不懂，那建议你不要修改
+  # 初始化连接数
+  initialSize = 10
+  # 最大连接池数量 (适应虚拟线程高并发)
+  maxActive = 100
+  # 最小空闲连接
+  minIdle = 10
+  # 获取连接最大等待时间 (6秒)
+  maxWait = 6000
+  
+  # [性能] 使用非公平锁
+  # 在高并发下，非公平锁能减少线程上下文切换，提升吞吐量。
+  # 虚拟线程本身切换成本低，配合非公平锁可以更快抢占连接。
+  useUnfairLock = true
+  # [性能] 开启 PS 缓存
+  poolPreparedStatements = true
+  maxOpenPreparedStatements = 100
+  # 验证查询
+  validationQuery = SELECT 1
+  # [性能] 关闭借出/归还检测，依赖空闲检测
+  testOnBorrow = false
+  testOnReturn = false
+  testWhileIdle = true
+  
+  # [稳定性] 增强的空闲检测与保活配置
+  # 1. 开启 KeepAlive，防止防火墙切断空闲连接
+  keepAlive = true
+  # 2. 检测线程运行间隔 (1分钟)
+  timeBetweenEvictionRunsMillis = 60000
+  # 3. 连接在池中最小生存的时间 (5分钟)，小于这个时间不被回收
+  minEvictableIdleTimeMillis = 300000
+  # 4. 连接在池中最大生存的时间 (7小时)，防止连接持有太久导致服务端资源泄露
+  maxEvictableIdleTimeMillis = 25200000
+  
+  # [研发调试] 连接泄露检测 (生产环境可关闭，研发阶段强烈建议开启)
+  # 如果连接被借出超过 180 秒未归还，视为泄露，强制回收
+  removeAbandoned = true
+  removeAbandonedTimeout = 180
+  # 打印泄露连接的堆栈信息，帮助定位是谁没关连接
+  logAbandoned = true
+  
+  # 初始化 SQL
+  connectionInitSqls = SELECT 1
+  # 过滤器
+  filters = stat
