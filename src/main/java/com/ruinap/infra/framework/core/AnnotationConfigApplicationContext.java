@@ -280,6 +280,15 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
             }
 
             try {
+                // 检查是否存在无参构造函数
+                try {
+                    clazz.getDeclaredConstructor();
+                } catch (NoSuchMethodException e) {
+                    RcsLog.sysLog.error("初始化失败: 组件 [{}] 缺少 public 无参构造函数。暂不支持构造器注入，请使用 @Autowired 字段注入。", clazz.getName(), e);
+                    // 明确抛出业务异常，指导开发者
+                    throw new RuntimeException();
+                }
+
                 Object instance;
 
                 // =======================================================
