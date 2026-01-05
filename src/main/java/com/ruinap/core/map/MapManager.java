@@ -21,7 +21,6 @@ import org.graph4j.Edge;
 import org.graph4j.NeighborIterator;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -52,17 +51,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
      */
     private final Lock reloadLock = new ReentrantLock();
 
-    // ================== 2. 动态数据区 ==================
-    /**
-     * 点位占用表
-     * Key: "mapId_pointId" (业务主键)
-     * Value: RcsPointOccupy (新版高性能状态对象)
-     * <p>
-     * 策略：全量预加载，严禁运行时动态添加 Key。
-     */
-    private final Map<Long, RcsPointOccupy> occupyMap = new ConcurrentHashMap<>();
-
-    // ================== 3. 生命周期管理 ==================
+    // ================== 2. 生命周期管理 ==================
 
     /**
      * 容器启动后自动调用此方法
@@ -87,7 +76,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
         this.reloadAsync();
     }
 
-    // ================== 4. 动态状态操作 ==================
+    // ================== 3. 动态状态操作 ==================
 
     /**
      * 获取点位占用对象 (严格模式)
@@ -101,9 +90,14 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
         if (mapId == null || pointId == null) {
             return null;
         }
+        // 捕获当前引用的快照 (局部变量)
+        MapSnapshot localSnap = this.snapshot;
+        if (localSnap == null) {
+            return null;
+        }
         // 既然 loadInternal 保证了集合完整性，这里直接 get 即可
         // 甚至不需要查 snapshot.getGraphId 做前置校验，因为 occupyMap 的 Key 集合是 snapshot 的子集(或超集)
-        return occupyMap.get(MapKeyUtil.compositeKey(mapId, pointId));
+        return localSnap.occupys().get(MapKeyUtil.compositeKey(mapId, pointId));
     }
 
     /**
@@ -123,8 +117,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
      */
     public boolean getPointOccupyState(Integer mapId, Integer pointId) {
         boolean occupied = false;
-        long key = MapKeyUtil.compositeKey(mapId, pointId);
-        RcsPointOccupy rcsOccupy = occupyMap.get(key);
+        RcsPointOccupy rcsOccupy = getPointOccupy(mapId, pointId);
         if (rcsOccupy != null) {
             occupied = rcsOccupy.isPhysicalBlocked();
         }
@@ -142,11 +135,6 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
      * @param occupyType 占用类型
      */
     public boolean addOccupyType(String deviceCode, RcsPoint rcsPoint, PointOccupyTypeEnum occupyType) {
-        if (snapshot.getGraphId(rcsPoint.getMapId(), rcsPoint.getId()) == null) {
-            RcsLog.sysLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("地图点位 [{}] 获取不到 RcsPointOccupy 数据", rcsPoint));
-            return false;
-        }
-
         RcsPointOccupy rcsOccupy = getPointOccupy(rcsPoint.getMapId(), rcsPoint.getId());
         if (rcsOccupy == null) {
             RcsLog.sysLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("地图点位 [{}] 获取不到 RcsPointOccupy 数据", rcsPoint));
@@ -206,8 +194,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
      * @return true=操作成功, false=点位不存在
      */
     public boolean removeOccupyType(String deviceCode, RcsPoint rcsPoint, PointOccupyTypeEnum type) {
-        long key = MapKeyUtil.compositeKey(rcsPoint.getMapId(), rcsPoint.getId());
-        RcsPointOccupy rcsOccupy = occupyMap.get(key);
+        RcsPointOccupy rcsOccupy = getPointOccupy(rcsPoint.getMapId(), rcsPoint.getId());
         if (rcsOccupy != null) {
             return rcsOccupy.release(deviceCode, type);
         }
@@ -241,7 +228,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
         return anyChanged;
     }
 
-    // ================== 5. 图算法查询 ==================
+    // ================== 4. 图算法查询 ==================
 
     /**
      * 获取全量有向图
@@ -430,7 +417,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
         }
     }
 
-    // ================== 6. 地图加载逻辑 ==================
+    // ================== 5. 地图加载逻辑 ==================
 
     /**
      * 运行时异步热更新
@@ -450,56 +437,69 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
     }
 
     /**
-     * 内部核心加载逻辑 (提取公共代码)
-     *
-     * @param force true=强制覆盖; false=检查MD5
+     * 内部核心加载逻辑
+     * <p>
+     * <b>State Migration (状态迁移)：</b>
+     * 关键步骤：当新地图加载时，必须保留旧地图中依然存在的点位的【对象实例】。
+     * 因为 RcsPointOccupy 内部持有 Lock，如果换了新对象，会导致正在等待锁的线程失效。
+     * </p>
      */
     private void loadInternal(boolean force) {
         try {
-            // 1. 获取 MapLoader 生产好的快照 (包含 occupys)
+            // 1. 加载全新的快照 (包含全新的 Graph 和全新的 RcsPointOccupy 对象)
             MapSnapshot newSnap = mapLoader.load();
             if (newSnap.pointMap().isEmpty()) {
                 RcsLog.consoleLog.error("地图加载为空，保持原地图不变");
                 return;
             }
 
-            if (!force && newSnap.versionMd5().equals(snapshot.versionMd5())) {
+            // 2. 校验版本
+            if (!force && isSameVersion(newSnap, this.snapshot)) {
                 RcsLog.consoleLog.info("地图文件无变更，忽略更新");
                 return;
             }
 
-            // 2. 状态合并 (State Merge)
-            // 策略：putIfAbsent。
-            // 如果 key 已存在 (旧地图有)，则保留旧值 (保留锁状态)。
-            // 如果 key 不存在 (新地图新增)，则放入 MapLoader 创建好的新值。
-            newSnap.occupys().forEach(occupyMap::putIfAbsent);
+            // 3. 状态迁移 (CRITICAL SECTION)
+            // 获取新生成的 Occupy Map
+            Map<Long, RcsPointOccupy> newOccupys = newSnap.occupys();
+            // 获取当前的 Occupy Map (直接从旧快照拿)
+            Map<Long, RcsPointOccupy> oldOccupys = this.snapshot.occupys();
 
-            // 3. 状态清理 (State Cleanup)
-            // 移除那些在新地图中已经不存在的点位 (防止内存泄漏)
-            // 使用 newSnap 的 occupys 作为"当前有效点位"的判断依据
-            occupyMap.entrySet().removeIf(entry -> {
-                long key = entry.getKey();
-                RcsPointOccupy state = entry.getValue();
+            if (oldOccupys != null && !oldOccupys.isEmpty()) {
+                // 遍历新地图的所有点位
+                for (Map.Entry<Long, RcsPointOccupy> entry : newOccupys.entrySet()) {
+                    Long key = entry.getKey();
 
-                // 如果新地图里没有这个 Key
-                if (!newSnap.occupys().containsKey(key)) {
-                    // 只有当该点位 "没有物理阻塞" 时才安全移除
-                    // 保护机制：防止删除正在被 AGV 占用的点导致程序崩溃
-                    return !state.isPhysicalBlocked();
+                    // 检查旧地图中是否也有这个点
+                    RcsPointOccupy oldOccupy = oldOccupys.get(key);
+
+                    if (oldOccupy != null) {
+                        // 【核心修复】
+                        // 如果旧地图有这个点，直接把新 Map 里的 Value 替换为旧的 Occupy 对象！
+                        // 这样就保留了之前的锁(Lock)和占用者(Occupants)信息。
+                        newOccupys.put(key, oldOccupy);
+                    }
+                    // 如果旧地图没有（是新增点位），则保留 newSnap 里的新对象
                 }
-                return false;
-            });
+            }
 
-            // 4. 切换快照
+            // 4. 原子切换 (Atomic Swap)
+            // 此时 newSnap 内部已经持有了“旧锁对象”和“新点位对象”的正确组合
             this.snapshot = newSnap;
+
             RcsLog.consoleLog.info("MapManager 地图同步完毕 Points: {}", newSnap.pointMap().size());
             RcsLog.consoleLog.info("MapManager 地图加载完成 当前地图指纹: {}", newSnap.versionMd5());
+
         } catch (Exception e) {
             RcsLog.consoleLog.error("地图加载严重失败", e);
-            // 如果是启动阶段失败，这里可以抛出异常让系统停机，看业务需求
             if (force) {
                 throw new RuntimeException("系统启动阶段地图加载失败", e);
             }
         }
+    }
+
+    private boolean isSameVersion(MapSnapshot newSnap, MapSnapshot oldSnap) {
+        if (oldSnap == null || oldSnap.versionMd5() == null) return false;
+        return Objects.equals(newSnap.versionMd5(), oldSnap.versionMd5());
     }
 }
