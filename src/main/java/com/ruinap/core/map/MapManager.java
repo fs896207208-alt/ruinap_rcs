@@ -499,7 +499,9 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
     }
 
     private boolean isSameVersion(MapSnapshot newSnap, MapSnapshot oldSnap) {
-        if (oldSnap == null || oldSnap.versionMd5() == null) return false;
+        if (oldSnap == null || oldSnap.versionMd5() == null) {
+            return false;
+        }
         return Objects.equals(newSnap.versionMd5(), oldSnap.versionMd5());
     }
 }
