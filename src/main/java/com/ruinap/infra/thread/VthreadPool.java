@@ -272,6 +272,7 @@ public class VthreadPool {
             } catch (InterruptedException e) {
                 // 外部调用 future.cancel(true) 时会触发中断，优雅退出
                 Thread.currentThread().interrupt();
+                RcsLog.sysLog.error("FixedDelay 调度任务执行时异常", e);
             }
         });
     }

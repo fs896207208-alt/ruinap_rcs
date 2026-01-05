@@ -5,6 +5,7 @@ import com.ruinap.core.map.pojo.RcsPoint;
 import com.ruinap.core.map.util.GeometryUtils;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
+import com.ruinap.infra.structure.RcsQuadtree;
 import org.locationtech.jts.geom.Geometry;
 
 import java.util.ArrayList;
@@ -26,6 +27,12 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TrafficService {
     @Autowired
     private MapManager mapManager;
+
+    /**
+     * 空间索引 (四叉树)
+     * 用于快速筛选可能碰撞的候选对象
+     */
+    private final RcsQuadtree rcsQuadtree = new RcsQuadtree();
     /**
      * 活跃 AGV 的安全包络缓存
      * Key: AGV编号

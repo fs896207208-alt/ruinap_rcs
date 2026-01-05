@@ -160,15 +160,65 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
             return false;
         }
 
-        boolean allSuccess = true;
+        // 1. 事务日志：记录本次操作成功锁定的点，用于失败时回滚
+        // 预设大小避免扩容开销
+        List<RcsPoint> lockedPoints = new ArrayList<>(points.size());
+        boolean transactionSuccess = true;
+
         for (RcsPoint point : points) {
-            // 复用单点逻辑
-            // 只要有一个失败，整体标记为 false，但我们依然尝试设置后续的点 (Best Effort)
-            if (!addOccupyType(deviceCode, point, type)) {
-                allSuccess = false;
+            // 2. 尝试锁定单个点
+            // 调用现有的单点锁定逻辑
+            boolean success = addOccupyType(deviceCode, point, type);
+
+            if (success) {
+                // 锁定成功，记入“账本”
+                lockedPoints.add(point);
+            } else {
+                // 3. 遇到失败：标记事务失败，并立即停止后续尝试
+                transactionSuccess = false;
+                // 日志记录：这对排查“车为什么停住”非常关键
+                if (RcsLog.algorithmLog.isInfoEnabled()) {
+                    RcsLog.algorithmLog.info("路径申请受阻，触发回滚。Device: {}, BlockedAt: {}", deviceCode, point.getId());
+                }
+                break;
             }
         }
-        return allSuccess;
+
+        // 4. 如果事务失败，执行补偿操作 (回滚)
+        if (!transactionSuccess) {
+            rollbackLockedPoints(deviceCode, lockedPoints, type);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * 内部辅助方法：回滚已锁定的点位 (补偿事务)
+     *
+     * @param deviceCode   设备ID
+     * @param lockedPoints 本次事务中已成功锁定的点位集合
+     * @param type         占用类型
+     */
+    private void rollbackLockedPoints(String deviceCode, List<RcsPoint> lockedPoints, PointOccupyTypeEnum type) {
+        if (lockedPoints.isEmpty()) {
+            return;
+        }
+
+        // 建议倒序释放 (LIFO)，虽然在无死锁检测算法中顺序可能不敏感，
+        // 但倒序释放符合栈的逻辑，能最大程度减少与其他线程锁竞争的复杂度。
+        for (int i = lockedPoints.size() - 1; i >= 0; i--) {
+            RcsPoint point = lockedPoints.get(i);
+            try {
+                // 调用现有的释放逻辑
+                // 注意：这里必须确保 removeOccupyType 是幂等的或安全的（当前代码是安全的）
+                removeOccupyType(deviceCode, point, type);
+            } catch (Exception e) {
+                // 5. 异常防御：回滚过程绝对不能抛出异常中断，否则会造成永久的“幽灵锁”
+                // 这里必须 catch 住所有异常并打印 ERROR 日志
+                RcsLog.sysLog.error("CRITICAL: 回滚路径锁定时发生异常，可能导致点位永久占用! Point: {}", point.getId(), e);
+            }
+        }
     }
 
     /**
