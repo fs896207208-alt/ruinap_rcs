@@ -6,15 +6,11 @@ import com.ruinap.infra.config.pojo.CoreConfig;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.Environment;
 import com.ruinap.infra.framework.core.event.RcsCoreConfigRefreshEvent;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.*;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.MockitoAnnotations;
 
 import java.io.File;
 import java.util.LinkedHashMap;
@@ -29,8 +25,8 @@ import static org.mockito.Mockito.*;
  * @author qianye
  * @create 2025-12-24 17:06
  */
-@RunWith(MockitoJUnitRunner.class)
-public class CoreYamlTest {
+@DisplayName("核心配置(CoreYaml)测试")
+class CoreYamlTest {
 
     @Mock
     private Environment environment; // 模拟 IOC 环境
@@ -46,10 +42,14 @@ public class CoreYamlTest {
     // 静态方法的 Mock 控制器
     private MockedStatic<FileUtil> fileUtilMock;
     private MockedStatic<SecureUtil> secureUtilMock;
+    private AutoCloseable mockitoCloseable;
 
-    @Before
+    @BeforeEach
     public void setUp() {
-        // 1. 准备测试数据
+        // JUnit 6 初始化
+        mockitoCloseable = MockitoAnnotations.openMocks(this);
+
+        // 1. 准备测试数据 (严格保留)
         mockConfig = new CoreConfig();
         LinkedHashMap<String, String> rcsSys = new LinkedHashMap<>();
         rcsSys.put("develop", "true");
@@ -63,14 +63,18 @@ public class CoreYamlTest {
         secureUtilMock = mockStatic(SecureUtil.class);
     }
 
-    @After
-    public void tearDown() {
+    @AfterEach
+    public void tearDown() throws Exception {
         // 3. 必须关闭静态 Mock，避免污染其他测试
         if (fileUtilMock != null) fileUtilMock.close();
         if (secureUtilMock != null) secureUtilMock.close();
+
+        // 关闭 Mockito 资源
+        if (mockitoCloseable != null) mockitoCloseable.close();
     }
 
     @Test
+    @DisplayName("测试：初始化加载")
     public void testInitialize() {
         // --- 准备 ---
         // 模拟 environment.bind 返回我们准备好的 mockConfig
@@ -85,12 +89,15 @@ public class CoreYamlTest {
         coreYaml.initialize();
 
         // --- 验证 ---
-        Assert.assertEquals("配置读取失败", "true", coreYaml.getDevelop());
+        // JUnit 6: assertEquals(expected, actual, message) - 参数顺序修正
+        Assertions.assertEquals("true", coreYaml.getDevelop(), "配置读取失败");
+
         // 验证 bind 方法被调用了 1 次
         verify(environment, times(1)).bind(eq("rcs_core"), eq(CoreConfig.class));
     }
 
     @Test
+    @DisplayName("测试：热更新流程")
     public void testRequestReloadFlow() {
         // --- 场景模拟：文件发生了变化，触发热更新 ---
 

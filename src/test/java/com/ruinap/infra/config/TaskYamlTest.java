@@ -7,15 +7,11 @@ import com.ruinap.infra.config.pojo.task.TaskCommonEntity;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.Environment;
 import com.ruinap.infra.framework.core.event.RcsTaskConfigRefreshEvent;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.*;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.MockitoAnnotations;
 
 import java.io.File;
 
@@ -26,8 +22,8 @@ import static org.mockito.Mockito.*;
  * @author qianye
  * @create 2025-12-24 17:24
  */
-@RunWith(MockitoJUnitRunner.class)
-public class TaskYamlTest {
+@DisplayName("任务配置(TaskYaml)测试")
+class TaskYamlTest {
 
     @Mock
     private Environment environment;
@@ -38,20 +34,28 @@ public class TaskYamlTest {
 
     private MockedStatic<FileUtil> fileUtilMock;
     private MockedStatic<SecureUtil> secureUtilMock;
+    private AutoCloseable mockitoCloseable;
 
-    @Before
+    @BeforeEach
     public void setUp() {
+        // JUnit 6 初始化 Mock
+        mockitoCloseable = MockitoAnnotations.openMocks(this);
+        // 初始化静态 Mock (完全保留原逻辑)
         fileUtilMock = mockStatic(FileUtil.class);
         secureUtilMock = mockStatic(SecureUtil.class);
     }
 
-    @After
-    public void tearDown() {
-        fileUtilMock.close();
-        secureUtilMock.close();
+    @AfterEach
+    public void tearDown() throws Exception {
+        // 关闭静态 Mock
+        if (fileUtilMock != null) fileUtilMock.close();
+        if (secureUtilMock != null) secureUtilMock.close();
+        // 关闭 Mockito 资源
+        if (mockitoCloseable != null) mockitoCloseable.close();
     }
 
     @Test
+    @DisplayName("测试：任务配置数据加载")
     public void testTaskConfigData() {
         TaskConfig mockConfig = new TaskConfig();
         TaskCommonEntity common = new TaskCommonEntity();
@@ -66,13 +70,15 @@ public class TaskYamlTest {
 
         taskYaml.initialize();
 
-        Assert.assertEquals(Integer.valueOf(99), taskYaml.getTaskDistributeMode());
+        // JUnit 6: assertEquals(expected, actual)
+        Assertions.assertEquals(Integer.valueOf(99), taskYaml.getTaskDistributeMode());
         // 验证空集合兜底
-        Assert.assertNotNull(taskYaml.getTaskPiontAlias());
-        Assert.assertTrue(taskYaml.getTaskPiontAlias().isEmpty());
+        Assertions.assertNotNull(taskYaml.getTaskPiontAlias());
+        Assertions.assertTrue(taskYaml.getTaskPiontAlias().isEmpty());
     }
 
     @Test
+    @DisplayName("测试：检查更新与重载")
     public void testCheckAndReload() {
         File mockFile = mock(File.class);
         fileUtilMock.when(() -> FileUtil.newFile(anyString())).thenReturn(mockFile);
@@ -83,9 +89,11 @@ public class TaskYamlTest {
         taskYaml.initialize();
 
         secureUtilMock.when(() -> SecureUtil.md5(mockFile)).thenReturn("md5_2");
+
+        // 严格保留注释代码
 //        boolean changed = taskYaml.checkAndReload();
 
-//        Assert.assertTrue(changed);
+//        Assertions.assertTrue(changed);
         verify(ctx, times(1)).publishEvent(any(RcsTaskConfigRefreshEvent.class));
     }
 }

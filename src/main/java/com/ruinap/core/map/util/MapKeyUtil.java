@@ -18,13 +18,16 @@ public class MapKeyUtil {
     /**
      * 生成点位组合键 (压缩为 long)
      * <p>
-     * 结构: [ MapId (高32位) | PointId (低32位) ]
-     * 优势: 纯 CPU 寄存器操作，无堆内存分配，无 GC。
-     * 限制: mapId 和 pointId 必须在 int 范围内 (足够 AGV 场景使用)。
+     * 适用于内部核心算法（A*搜索、死锁检测）。
+     * 注意：若对接 VDA5050，需在协议适配层维护 String nodeId 到此 int pointId 的映射。
      * </p>
+     *
+     * @param mapId   地图ID
+     * @param pointId 点位ID (允许负数，通过位掩码保护)
+     * @return 64位唯一键
      */
     public static long compositeKey(int mapId, int pointId) {
-        // mapId 放高32位，pointId 放低32位
+        // mapId 放高32位，pointId 放低32位 (使用 0xFFFFFFFFL 确保低位视为无符号拼接)
         return ((long) mapId << 32) | (pointId & 0xFFFFFFFFL);
     }
 
@@ -46,26 +49,21 @@ public class MapKeyUtil {
 
     /**
      * 边(Edge)唯一标识 Record
-     * <p>
-     * 替代了原有的 String 拼接 key。
-     * Record 在 Map 中的查找性能远高于 String，因为没有字符数组的遍历比对。
-     * </p>
+     * JDK 21 Record 在堆内存中布局更紧凑，且 hashCode 计算针对不可变数据做了优化。
      */
     public record EdgeKey(int fromMapId, int fromPointId, int toMapId, int toPointId) {
-        // Record 自动实现了最高效的 equals 和 hashCode
+        //Compact constructor 进行校验（可选，视性能要求而定）
+        public EdgeKey {
+            // 在调度系统中，通常不建议包含负数ID（除非是特殊的虚拟点），此处保留灵活性暂不报错
+        }
     }
 
     /**
      * 生成边 Key
-     * * @return EdgeKey 对象 (比 String 对象更轻量)
+     * 直接传递基本类型，避免拆装箱
      */
-    public static EdgeKey edgeKey(Integer fromMapId, Integer fromPointId, Integer toMapId, Integer toPointId) {
-        // 自动拆箱防御
-        int fMap = fromMapId == null ? 0 : fromMapId;
-        int fPt = fromPointId == null ? 0 : fromPointId;
-        int tMap = toMapId == null ? 0 : toMapId;
-        int tPt = toPointId == null ? 0 : toPointId;
-        return new EdgeKey(fMap, fPt, tMap, tPt);
+    public static EdgeKey edgeKey(int fromMapId, int fromPointId, int toMapId, int toPointId) {
+        return new EdgeKey(fromMapId, fromPointId, toMapId, toPointId);
     }
 
     // ================== 3. 辅助方法 ==================
@@ -76,5 +74,5 @@ public class MapKeyUtil {
     public static String toString(long compositeKey) {
         return parseMapId(compositeKey) + "_" + parsePointId(compositeKey);
     }
-    
+
 }

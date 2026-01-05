@@ -1,6 +1,7 @@
 package com.ruinap.infra.aop;
 
-import org.junit.Test;
+
+import org.junit.jupiter.api.Test;
 
 /**
  * @author qianye

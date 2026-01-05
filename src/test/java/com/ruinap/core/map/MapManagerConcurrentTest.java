@@ -9,13 +9,13 @@ import com.ruinap.core.map.util.MapKeyUtil;
 import com.ruinap.infra.thread.VthreadPool;
 import org.graph4j.Digraph;
 import org.graph4j.GraphBuilder;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.MockitoAnnotations;
 
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
@@ -36,7 +36,6 @@ import static org.mockito.Mockito.when;
  * @author qianye
  * @create 2025-12-30 15:29
  */
-@RunWith(MockitoJUnitRunner.class)
 public class MapManagerConcurrentTest {
 
     @InjectMocks
@@ -51,8 +50,14 @@ public class MapManagerConcurrentTest {
     // 使用真实线程池模拟并发
     private ExecutorService executorService;
 
-    @Before
+    // JUnit 6 Mock 资源句柄
+    private AutoCloseable mockitoCloseable;
+
+    @BeforeEach
     public void setUp() {
+        // JUnit 6 初始化 Mock
+        mockitoCloseable = MockitoAnnotations.openMocks(this);
+
         // 1. 模拟 VthreadPool (并发测试中其实不太依赖它，因为我们自己开线程池，但为了防NPE)
         doAnswer(invocation -> {
             Runnable r = invocation.getArgument(0);
@@ -62,6 +67,18 @@ public class MapManagerConcurrentTest {
 
         // JDK 21 推荐使用虚拟线程，这里为了通用性使用固定线程池，效果一样
         executorService = Executors.newFixedThreadPool(100);
+    }
+
+    @AfterEach
+    public void tearDown() throws Exception {
+        // 关闭 Mock 资源
+        if (mockitoCloseable != null) {
+            mockitoCloseable.close();
+        }
+        // 最好关闭线程池，虽然原代码没写，但为了测试稳定性建议加上
+        if (executorService != null) {
+            executorService.shutdownNow();
+        }
     }
 
     /**
@@ -146,11 +163,13 @@ public class MapManagerConcurrentTest {
         // 理论上：只有 1 个能抢到，49 个失败
         System.out.println("争抢结果 - 成功: " + successCount.get() + ", 失败: " + failCount.get());
 
-        Assert.assertEquals("应该只有1个线程能抢到锁", 1, successCount.get());
-        Assert.assertEquals("其他线程应该全部失败", threadCount - 1, failCount.get());
+        // JUnit 6: assertEquals(expected, actual, message)
+        Assertions.assertEquals(1, successCount.get(), "应该只有1个线程能抢到锁");
+        Assertions.assertEquals(threadCount - 1, failCount.get(), "其他线程应该全部失败");
 
         // 验证物理状态
-        Assert.assertTrue("点位最终应该被锁住", mapManager.getPointOccupyState(1, 100));
+        // JUnit 6: assertTrue(condition, message)
+        Assertions.assertTrue(mapManager.getPointOccupyState(1, 100), "点位最终应该被锁住");
     }
 
     @Test
@@ -211,7 +230,7 @@ public class MapManagerConcurrentTest {
 
         // 检查 101 的归属
         RcsPointOccupy occupy101 = mapManager.getPointOccupy(1, 101);
-        Assert.assertTrue("101 必须被锁住", occupy101.isPhysicalBlocked());
+        Assertions.assertTrue(occupy101.isPhysicalBlocked(), "101 必须被锁住");
 
         Set<PointOccupyTypeEnum> ownersA = occupy101.getOccupants().get("AGV_A");
         Set<PointOccupyTypeEnum> ownersB = occupy101.getOccupants().get("AGV_B");
@@ -222,7 +241,7 @@ public class MapManagerConcurrentTest {
         System.out.println("101 归属: A=" + aHasIt + ", B=" + bHasIt);
 
         // 互斥验证：不能同时拥有
-        Assert.assertFalse("101 不能同时被 A 和 B 锁住", aHasIt && bHasIt);
-        Assert.assertTrue("101 必须被 A 或 B 锁住", aHasIt || bHasIt);
+        Assertions.assertFalse(aHasIt && bHasIt, "101 不能同时被 A 和 B 锁住");
+        Assertions.assertTrue(aHasIt || bHasIt, "101 必须被 A 或 B 锁住");
     }
 }

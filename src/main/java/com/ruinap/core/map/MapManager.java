@@ -60,7 +60,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
      * <p>
      * 策略：全量预加载，严禁运行时动态添加 Key。
      */
-    private final Map<String, RcsPointOccupy> occupyMap = new ConcurrentHashMap<>();
+    private final Map<Long, RcsPointOccupy> occupyMap = new ConcurrentHashMap<>();
 
     // ================== 3. 生命周期管理 ==================
 
@@ -478,7 +478,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
             // 移除那些在新地图中已经不存在的点位 (防止内存泄漏)
             // 使用 newSnap 的 occupys 作为"当前有效点位"的判断依据
             occupyMap.entrySet().removeIf(entry -> {
-                String key = entry.getKey();
+                long key = entry.getKey();
                 RcsPointOccupy state = entry.getValue();
 
                 // 如果新地图里没有这个 Key

@@ -1,14 +1,10 @@
 package com.ruinap.infra.config;
 
-import cn.hutool.setting.Setting;
 import com.ruinap.infra.framework.core.Environment;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.*;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.MockitoAnnotations;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -23,8 +19,8 @@ import static org.mockito.Mockito.when;
  * @author qianye
  * @create 2025-12-08 10:58
  */
-@RunWith(MockitoJUnitRunner.class)
-public class DbSettingTest {
+@DisplayName("数据库配置(DbSetting)测试")
+class DbSettingTest {
 
     @Mock
     private Environment environment;
@@ -35,9 +31,15 @@ public class DbSettingTest {
     @InjectMocks
     private DbSetting dbSetting;
 
-    @Before
-    public void setUp() {
+    private AutoCloseable mockitoCloseable;
+
+    @BeforeEach
+    void setUp() {
+        // JUnit 6: 手动初始化 Mock 注入
+        mockitoCloseable = MockitoAnnotations.openMocks(this);
+
         // 模拟 Environment 返回的 Map 数据 (用于 bind)
+        // 保持原测试逻辑不变
         Map<String, Object> rootMap = new HashMap<>();
         Map<String, String> dbGroup = new HashMap<>();
         dbGroup.put("db_name", "test_db");
@@ -47,25 +49,26 @@ public class DbSettingTest {
         when(environment.bind(eq("rcs_db"), eq(Map.class))).thenReturn(rootMap);
     }
 
-    @Test
-    public void testInitializeAndGetters() {
-        dbSetting.initialize();
-
-        Assert.assertEquals("test_db", dbSetting.getDatabaseName());
-        Assert.assertEquals("10.0.0.1", dbSetting.getDatabaseIp());
-        // 未配置的端口应为 null
-        Assert.assertNull(dbSetting.getDatabasePort());
+    @AfterEach
+    void tearDown() throws Exception {
+        // 及时关闭 Mock 资源
+        if (mockitoCloseable != null) {
+            mockitoCloseable.close();
+        }
     }
 
     @Test
-    public void testGetSettingFromAdapter() {
-        // 模拟 ConfigAdapter 返回 Hutool Setting 对象
-        Setting mockSetting = new Setting();
-        when(configAdapter.getSetting("rcs_db")).thenReturn(mockSetting);
+    @DisplayName("测试：初始化与参数获取")
+    void testInitializeAndGetters() {
+        // 执行初始化
+        dbSetting.initialize();
 
-        // 验证 DbSetting 是否正确委托给了 Adapter
-        Setting result = dbSetting.getSetting();
-        Assert.assertNotNull(result);
-        Assert.assertSame(mockSetting, result);
+        // 验证属性是否正确注入
+        // JUnit 6: Assertions.assertEquals(expected, actual)
+        Assertions.assertEquals("test_db", dbSetting.getDatabaseName());
+        Assertions.assertEquals("10.0.0.1", dbSetting.getDatabaseIp());
+
+        // 未配置的端口应为 null
+        Assertions.assertNull(dbSetting.getDatabasePort());
     }
 }

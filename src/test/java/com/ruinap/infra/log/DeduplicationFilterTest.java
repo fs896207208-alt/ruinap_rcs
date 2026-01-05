@@ -1,18 +1,16 @@
-package com.ruinap.log;
+package com.ruinap.infra.log;
 
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.test.SpringBootTest;
-import com.ruinap.infra.framework.test.SpringRunner;
 import com.ruinap.infra.log.filter.DeduplicationFilter;
-import com.ruinap.infra.thread.VthreadPool;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.impl.Log4jLogEvent;
 import org.apache.logging.log4j.message.SimpleMessage;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,128 +24,120 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author qianye
  * @create 2025-12-05 18:44
  */
-@RunWith(SpringRunner.class)
-@SpringBootTest
-public class DeduplicationFilterTest {
+@SpringBootTest // 组合注解，已包含 JUnit 6 扩展
+@DisplayName("日志去重过滤器测试")
+class DeduplicationFilterTest {
 
     @Autowired
-    private VthreadPool vthreadPool;
+    private DeduplicationFilter deduplicationFilter; // 如果容器中没有此 Bean，可能需要手动 new，视配置而定
 
-    private DeduplicationFilter filter;
+    /**
+     * 辅助方法：反射修改 Filter 内部的配置参数，以便于测试
+     */
+    private void mockFilterConfig(DeduplicationFilter filter, int maxSize, long expireTime) throws Exception {
+        // 修改 MAX_CACHE_SIZE
+        Field sizeField = DeduplicationFilter.class.getDeclaredField("MAX_CACHE_SIZE");
+        sizeField.setAccessible(true);
+        sizeField.set(filter, maxSize);
 
-    public DeduplicationFilter getFilter() {
-        if (filter == null) {
-            filter = DeduplicationFilter.createFilter("test-appender");
-            filter.start();
-        }
-        // 依然需要判空（因为 Log4j 可能比容器启动得早）
-        if (this.filter == null) {
-            throw new RuntimeException("DeduplicationFilter 未初始化成功");
-        }
-        return filter;
+        // 修改 EXPIRE_TIME_MS
+        Field expireField = DeduplicationFilter.class.getDeclaredField("EXPIRE_TIME_MS");
+        expireField.setAccessible(true);
+        expireField.set(filter, expireTime);
+    }
+
+    /**
+     * 辅助方法：反射获取缓存 Map
+     */
+    @SuppressWarnings("unchecked")
+    private ConcurrentHashMap<Integer, Long> getCacheMap(DeduplicationFilter filter) throws Exception {
+        Field cacheField = DeduplicationFilter.class.getDeclaredField("deduplicationCache");
+        cacheField.setAccessible(true);
+        return (ConcurrentHashMap<Integer, Long>) cacheField.get(filter);
+    }
+
+    private LogEvent createEvent(String msg) {
+        return Log4jLogEvent.newBuilder()
+                .setLevel(Level.ERROR)
+                .setMessage(new SimpleMessage(msg))
+                .build();
     }
 
     @Test
-    public void testBasicDeduplication() {
-        System.out.println("=== 测试用例 1: 基础去重功能 ===");
-        LogEvent event = createEvent("AGV-001 Connection Lost");
+    @DisplayName("测试：常规去重逻辑 (重复消息被 DENY)")
+    void testNormalDeduplication() {
+        System.out.println("=== 测试用例 1: 常规去重 ===");
+        DeduplicationFilter filter = DeduplicationFilter.createFilter("console");
 
-        // 1. 发送第一条
-        Filter.Result r1 = getFilter().filter(event);
-        System.out.println("  -> 第1次发送结果: " + r1 + " (预期: NEUTRAL)");
-        Assert.assertEquals(Filter.Result.NEUTRAL, r1);
+        LogEvent event1 = createEvent("Error: Connection timeout");
+        LogEvent event2 = createEvent("Error: Connection timeout"); // 重复
+        LogEvent event3 = createEvent("Error: Database down");      // 不同
 
-        // 2. 发送第二条
-        Filter.Result r2 = getFilter().filter(event);
-        System.out.println("  -> 第2次发送结果: " + r2 + " (预期: DENY)");
-        Assert.assertEquals(Filter.Result.DENY, r2);
+        // 第一次：放行
+        Assertions.assertEquals(Filter.Result.NEUTRAL, filter.filter(event1));
+
+        // 第二次（重复）：拒绝
+        Assertions.assertEquals(Filter.Result.DENY, filter.filter(event2), "重复日志应该被拒绝");
+
+        // 第三次（新内容）：放行
+        Assertions.assertEquals(Filter.Result.NEUTRAL, filter.filter(event3));
 
         System.out.println("=== 测试用例 1 通过 ===");
     }
 
     @Test
-    public void testDistinctMessages() {
-        System.out.println("=== 测试用例 2: 不同内容互不影响 ===");
+    @DisplayName("测试：缓存过期清理 (Expire Eviction)")
+    void testExpiration() throws Exception {
+        System.out.println("=== 测试用例 2: 过期清理 ===");
+        DeduplicationFilter filter = DeduplicationFilter.createFilter("console");
 
-        Filter.Result r1 = getFilter().filter(createEvent("Msg A"));
-        System.out.println("  -> Msg A 结果: " + r1);
-        Assert.assertEquals(Filter.Result.NEUTRAL, r1);
+        // 将过期时间改为 100ms
+        mockFilterConfig(filter, 1000, 100L);
 
-        Filter.Result r2 = getFilter().filter(createEvent("Msg B"));
-        System.out.println("  -> Msg B 结果: " + r2);
-        Assert.assertEquals(Filter.Result.NEUTRAL, r2);
+        LogEvent event = createEvent("Short lived error");
+
+        // 第一次：放行
+        filter.filter(event);
+
+        // 立即再次：拒绝
+        Assertions.assertEquals(Filter.Result.DENY, filter.filter(event));
+
+        // 等待 200ms 让缓存过期
+        Thread.sleep(200);
+
+        // 过期后：应该再次放行
+        Assertions.assertEquals(Filter.Result.NEUTRAL, filter.filter(event), "过期后日志应该重新被放行");
 
         System.out.println("=== 测试用例 2 通过 ===");
     }
 
     @Test
-    public void testExpirationLogic() throws Exception {
-        System.out.println("=== 测试用例 3: 过期机制验证 ===");
-        LogEvent event = createEvent("Timeout Warning");
+    @DisplayName("测试：缓存容量溢出清理 (Capacity Eviction)")
+    void testCapacityEviction() throws Exception {
+        System.out.println("=== 测试用例 4: 容量溢出清理 ===");
+        DeduplicationFilter filter = DeduplicationFilter.createFilter("console");
 
-        getFilter().filter(event);
-        System.out.println("  -> 首次发送完毕，已记录缓存");
+        // 设置极小的容量：5个
+        mockFilterConfig(filter, 5, 60000L);
+        ConcurrentHashMap<Integer, Long> cache = getCacheMap(filter);
 
-        // 反射修改时间
-        Field cacheField = DeduplicationFilter.class.getDeclaredField("cache");
-        cacheField.setAccessible(true);
-        ConcurrentHashMap<Integer, Long> cache = (ConcurrentHashMap<Integer, Long>) cacheField.get(getFilter());
+        // 1. 填满缓存 (5个)
+        // 模拟手动放入过期数据和新鲜数据
+        long now = System.currentTimeMillis();
+        cache.put(11111, now);
+        cache.put(22222, now);
+        cache.put(88888, now - 100000); // 这是一个很久以前的 Key (过期)
+        cache.put(99999, now);          // 这是一个刚刚放入的 Key (新鲜)
+        cache.put(33333, now);
 
-        System.out.println("  -> [黑客操作] 使用反射将缓存时间戳篡改为 1秒前...");
-        for (Integer key : cache.keySet()) {
-            cache.put(key, System.currentTimeMillis() - 1000L);
-        }
+        System.out.println("  -> 当前缓存大小: " + cache.size()); // 应该是 5
 
-        Filter.Result result = getFilter().filter(event);
-        System.out.println("  -> 再次发送结果: " + result + " (预期: NEUTRAL, 因为已过期)");
-        Assert.assertEquals(Filter.Result.NEUTRAL, result);
+        // 2. 触发清理
+        // 再来一条日志，导致 size > 5，触发 cleanup
+        LogEvent triggerEvent = createEvent("Trigger Overflow Log");
+        filter.filter(triggerEvent);
 
-        System.out.println("=== 测试用例 3 通过 ===");
-    }
-
-    @Test
-    public void testAsyncCleanup() throws Exception {
-        System.out.println("=== 测试用例 4: 异步清理逻辑 (高并发核心) ===");
-
-        DeduplicationFilter filter = getFilter();
-        Field cacheField = DeduplicationFilter.class.getDeclaredField("cache");
-        cacheField.setAccessible(true);
-        ConcurrentHashMap<Integer, Long> cache = (ConcurrentHashMap<Integer, Long>) cacheField.get(filter);
-
-        Field counterField = DeduplicationFilter.class.getDeclaredField("counter");
-        counterField.setAccessible(true);
-        java.util.concurrent.atomic.LongAdder counter = (java.util.concurrent.atomic.LongAdder) counterField.get(filter);
-        counter.add(500);
-
-        // 2. 准备大量脏数据
-        int limit = 510;
-        // 过期数据：设置为 100秒前过期
-        long expiredTime = System.currentTimeMillis() - 100_000L;
-
-        System.out.println("  -> [准备数据] 正在插入 " + limit + " 条过期数据...");
-        for (int i = 0; i < limit; i++) {
-            cache.put(i, expiredTime);
-        }
-
-        // 标记两个特殊的 Key 用于验证
-        cache.put(88888, expiredTime); // 肯定会被删的
-
-        // 【核心修复】新鲜数据：过期时间应该是 "未来"！
-        // 比如：当前时间 + 60秒 (模拟正常逻辑)
-        long freshTime = System.currentTimeMillis() + 60_000L;
-        cache.put(99999, freshTime);
-
-        System.out.println("  -> 当前 Cache 大小: " + cache.size());
-
-        // 3. 触发清理
-        System.out.println("  -> 发送触发日志 (Trigger Cleanup)...");
-        filter.filter(createEvent("Trigger Log Cleanup"));
-
-        // 4. 等待异步执行
-        System.out.println("  -> [等待] 睡眠 1秒 等待虚拟线程执行...");
-        Thread.sleep(1000);
-
-        // 5. 验证
+        // 3. 验证
         boolean hasOldKey = cache.containsKey(88888);
         boolean hasNewKey = cache.containsKey(99999);
         int currentSize = cache.size();
@@ -156,16 +146,19 @@ public class DeduplicationFilterTest {
         System.out.println("  -> [验证] 新鲜 Key (99999) 存在? " + hasNewKey);
         System.out.println("  -> [验证] 清理后剩余缓存数: " + currentSize);
 
-        Assert.assertFalse("过期数据 (88888) 应该被删除", hasOldKey);
-        Assert.assertTrue("新鲜数据 (99999) 应该保留", hasNewKey);
-        // 剩余数量应该是 2 个：99999 和 刚刚那条 Trigger Log
-        Assert.assertTrue("缓存应该被大量清理", currentSize < 10);
+        // JUnit 6: Assertions.assertFalse(condition, message) 注意参数顺序！
+        Assertions.assertFalse(hasOldKey, "过期数据 (88888) 应该被删除");
+        Assertions.assertTrue(hasNewKey, "新鲜数据 (99999) 应该保留");
+
+        // 剩余数量应该是 2 个：99999 和 刚刚那条 Trigger Log (实际可能还有其他的，只要小于阈值即可)
+        Assertions.assertTrue(currentSize < 5, "缓存应该被清理到阈值以下");
 
         System.out.println("=== 测试用例 4 通过 ===");
     }
 
     @Test
-    public void testAppenderIsolation() {
+    @DisplayName("测试：Appender 隔离性")
+    void testAppenderIsolation() {
         System.out.println("=== 测试用例 5: Appender 隔离性 ===");
         DeduplicationFilter consoleFilter = DeduplicationFilter.createFilter("console");
         DeduplicationFilter fileFilter = DeduplicationFilter.createFilter("file");
@@ -173,17 +166,17 @@ public class DeduplicationFilterTest {
         LogEvent event = createEvent("System Boot");
 
         // 两个过滤器应该分别处理，互不干扰
-        Assert.assertEquals(Filter.Result.NEUTRAL, consoleFilter.filter(event));
-        Assert.assertEquals(Filter.Result.NEUTRAL, fileFilter.filter(event));
-        System.out.println("=== 测试用例 5 通过 ===");
-    }
+        Assertions.assertEquals(Filter.Result.NEUTRAL, consoleFilter.filter(event));
+        Assertions.assertEquals(Filter.Result.NEUTRAL, fileFilter.filter(event));
 
-    private LogEvent createEvent(String msg) {
-        return Log4jLogEvent.newBuilder()
-                .setLoggerName("com.ruinap.test")
-                .setLevel(Level.INFO)
-                .setMessage(new SimpleMessage(msg))
-                .setTimeMillis(System.currentTimeMillis())
-                .build();
+        // console 再次过滤 -> DENY
+        Assertions.assertEquals(Filter.Result.DENY, consoleFilter.filter(event));
+
+        // file 依然应该受自己控制 (如果它之前没过滤过第二次，这里假设逻辑是隔离的)
+        // 注意：LogEvent 的 hashCode 是一样的，但是不同的 Filter 实例拥有不同的 Map。
+        // 上面 fileFilter.filter(event) 已经记录了一次，所以这里再次调用应该是 DENY。
+        Assertions.assertEquals(Filter.Result.DENY, fileFilter.filter(event), "File Filter 应该独立记录状态");
+
+        System.out.println("=== 测试用例 5 通过 ===");
     }
 }

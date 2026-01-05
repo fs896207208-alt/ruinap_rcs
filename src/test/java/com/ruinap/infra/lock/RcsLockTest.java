@@ -1,7 +1,7 @@
 package com.ruinap.infra.lock;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -72,7 +72,8 @@ public class RcsLockTest {
         }
 
         latch.await();
-        Assert.assertEquals("锁失效！并发累加结果错误", taskCount, counter[0]);
+        // JUnit 6: assertEquals(expected, actual, message)
+        Assertions.assertEquals(taskCount, counter[0], "锁失效！并发累加结果错误");
         System.out.println("    ✅ 结果正确: " + counter[0]);
     }
 
@@ -148,7 +149,7 @@ public class RcsLockTest {
         System.out.println("    ⚠️ 降级悲观读次数: " + fallbackCount.get());
 
         // 只要没抛异常，且有成功的，就算通过
-        Assert.assertTrue(successCount.get() > 0 || fallbackCount.get() > 0);
+        Assertions.assertTrue(successCount.get() > 0 || fallbackCount.get() > 0);
     }
 
     // ========================================================================
@@ -201,16 +202,18 @@ public class RcsLockTest {
 
         // 2. 线程 B 尝试拿锁，超时设为 50ms (应该失败)
         boolean success = lock.tryRunInWrite(50, TimeUnit.MILLISECONDS, () -> {
-            Assert.fail("不应该拿到锁！");
+            Assertions.fail("不应该拿到锁！");
         });
-        Assert.assertFalse("预期获取锁超时失败，但却成功了", success);
+        // JUnit 6: assertFalse(condition, message)
+        Assertions.assertFalse(success, "预期获取锁超时失败，但却成功了");
         System.out.println("    ✅ 超时放弃逻辑验证通过");
 
         // 3. 线程 C 尝试拿锁，超时设为 500ms (应该成功，因为 A 只占 200ms)
         boolean success2 = lock.tryRunInWrite(500, TimeUnit.MILLISECONDS, () -> {
             System.out.println("    ✅ 等待后获取锁成功");
         });
-        Assert.assertTrue("预期获取锁成功，但失败了", success2);
+        // JUnit 6: assertTrue(condition, message)
+        Assertions.assertTrue(success2, "预期获取锁成功，但失败了");
     }
 
     // ========================================================================
@@ -241,7 +244,7 @@ public class RcsLockTest {
 
         Thread t2 = Thread.ofVirtual().start(() -> {
             lock.runInWrite(() -> {
-                Assert.assertEquals(1, step.get());
+                Assertions.assertEquals(1, step.get());
                 step.set(2);
                 System.out.println("    T2: 发送信号...");
                 condition.signal();
@@ -251,7 +254,7 @@ public class RcsLockTest {
         t1.join();
         t2.join();
 
-        Assert.assertEquals(3, step.get());
+        Assertions.assertEquals(3, step.get());
         System.out.println("    ✅ Condition 流程验证通过");
     }
 }

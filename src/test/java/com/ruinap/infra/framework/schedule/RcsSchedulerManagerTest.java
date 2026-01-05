@@ -4,9 +4,8 @@ import com.ruinap.infra.config.CoreYaml;
 import com.ruinap.infra.config.pojo.CoreConfig;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.test.SpringBootTest;
-import com.ruinap.infra.framework.test.SpringRunner;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
@@ -22,28 +21,34 @@ import java.util.LinkedHashMap;
  * @author qianye
  * @create 2025-12-12 17:46
  */
-// 1. 指定 Runner，确保容器启动
-@RunWith(SpringRunner.class)
-// 2. 指定这是个集成测试
 @SpringBootTest
+@DisplayName("调度管理器(RcsScheduler)集成测试")
 public class RcsSchedulerManagerTest {
 
     @Autowired
     private RcsSchedulerManager schedulerManager;
 
-
     @Test
+    @DisplayName("测试：动态任务调度")
     public void testTaskScheduling() throws Exception {
-        System.out.println(">>> [Test] 等待任务执行 (3.5s)...");
-        Thread.sleep(3500);
+        System.out.println(">>> [Test] 等待任务执行 (sleep 1s)...");
 
+        // 1. 动态修改配置 (模拟从 YAML 读取)
+        mockCoreYamlStatic();
+
+        // 3. 观察控制台输出
+        // 预期：RcsSchedulerManager 会扫描到 @RcsScheduled 注解的方法，并开始周期性打印日志
+        Thread.sleep(1000);
+
+        System.out.println("-------------------------------------");
+        System.out.println("           请检查上方日志             ");
+        System.out.println(" 预期: [DynamicTimer] 任务被执行... ");
         System.out.println("---------------- 结果 ----------------");
         System.out.println("-------------------------------------");
-
     }
 
     /**
-     * 静态 Mock 方法
+     * 静态 Mock 方法 (严格保留原反射逻辑)
      */
     private static void mockCoreYamlStatic() throws Exception {
         CoreConfig coreConfig = new CoreConfig();
@@ -73,7 +78,5 @@ public class RcsSchedulerManagerTest {
         Field configField = CoreYaml.class.getDeclaredField("config");
         configField.setAccessible(true);
         configField.set(null, coreConfig);
-
-        System.out.println(">>> [Mock] CoreYaml 静态字段注入完成");
     }
 }

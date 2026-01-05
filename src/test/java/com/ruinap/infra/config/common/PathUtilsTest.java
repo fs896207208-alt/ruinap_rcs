@@ -1,7 +1,8 @@
 package com.ruinap.infra.config.common;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 
@@ -14,6 +15,7 @@ import java.nio.file.Path;
  * 3. 验证默认根路径逻辑 (默认为 "doc")。
  * 4. 覆盖文件中定义的所有 9 个文件常量和 4 个目录常量。
  */
+@DisplayName("路径工具(PathUtils)测试")
 public class PathUtilsTest {
 
     // 模拟预期的默认根目录 (根据 PathUtils 代码逻辑: "doc")
@@ -26,6 +28,7 @@ public class PathUtilsTest {
      * 而不校验 "物理文件是否存在"。
      */
     @Test
+    @DisplayName("人工确认路径打印")
     public void printAllPathsForManualCheck() {
         System.out.println("========== 路径解析人工确认 ==========");
         System.out.println("当前工作目录 (User Dir): " + PathUtils.ROOT_DIR.toAbsolutePath());
@@ -70,6 +73,7 @@ public class PathUtilsTest {
      * 确保所有文件都位于 CONFIG_DIR 目录下，且文件名正确
      */
     @Test
+    @DisplayName("配置文件常量完整性校验")
     public void testConfigFilesCompleteness() {
         Path rootDir = PathUtils.ROOT_DIR;
 
@@ -91,14 +95,17 @@ public class PathUtilsTest {
             String expectedFileName = (String) pair[1];
 
             // 1. 非空检查
-            Assert.assertNotNull("常量路径不能为 null: " + expectedFileName, actualPath);
+            // JUnit 6: assertNotNull(actual, message)
+            Assertions.assertNotNull(actualPath, "常量路径不能为 null: " + expectedFileName);
 
             // 2. 父目录检查 (这是关键: 确保文件确实在 config 目录下)
-            Assert.assertTrue("文件 " + actualPath + " 的根目录必须是 " + rootDir, actualPath.toString().contains(rootDir.toString()));
+            // JUnit 6: assertTrue(condition, message)
+            Assertions.assertTrue(actualPath.toString().contains(rootDir.toString()),
+                    "文件 " + actualPath + " 的根目录必须是 " + rootDir);
 
             // 3. 文件名检查
-            Assert.assertEquals("文件名解析错误",
-                    expectedFileName, actualPath.getFileName().toString());
+            // JUnit 6: assertEquals(expected, actual, message)
+            Assertions.assertEquals(expectedFileName, actualPath.getFileName().toString(), "文件名解析错误");
         }
     }
 
@@ -110,6 +117,7 @@ public class PathUtilsTest {
      * 我们必须确保这个操作不会修改原始的 CORE_CONFIG_FILE 常量。
      */
     @Test
+    @DisplayName("路径不可变性与衍生测试")
     public void testPathImmutabilityAndResolution() {
         System.out.println("========== 路径不可变性与衍生测试 ==========");
 
@@ -129,19 +137,16 @@ public class PathUtilsTest {
 
         // 验证 1: 原始对象未被修改 (这是多线程安全的基础)
         // 原始路径的文件名必须依然是 "rcs_core.yaml"
-        Assert.assertEquals("原始路径被篡改！",
-                "rcs_core.yaml", originalCorePath.getFileName().toString());
+        Assertions.assertEquals("rcs_core.yaml", originalCorePath.getFileName().toString(), "原始路径被篡改！");
 
         // 验证 2: 衍生对象是全新的
-        Assert.assertNotEquals("修改后的路径对象应该是新的实例",
-                originalCorePath, modifiedPath);
+        // JUnit 6: assertNotEquals(unexpected, actual, message)
+        Assertions.assertNotEquals(originalCorePath, modifiedPath, "修改后的路径对象应该是新的实例");
 
-        Assert.assertNotEquals("备份文件路径对象应该是新的实例",
-                originalCorePath, backupPath);
+        Assertions.assertNotEquals(originalCorePath, backupPath, "备份文件路径对象应该是新的实例");
 
         // 验证 3: 衍生逻辑正确
-        Assert.assertEquals("备份文件应命名为 rcs_core_backup.yaml",
-                "rcs_core_backup.yaml", backupPath.getFileName().toString());
+        Assertions.assertEquals("rcs_core_backup.yaml", backupPath.getFileName().toString(), "备份文件应命名为 rcs_core_backup.yaml");
 
         // --- 人工确认打印 ---
         System.out.println("衍生路径 (Modified): " + modifiedPath);

@@ -184,9 +184,9 @@
 
         <!-- 15. JUnit：单元测试框架 -->
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.13.2</version>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>6.0.1</version>
         </dependency>
         <!-- Mockito：模拟测试框架 -->
         <dependency>

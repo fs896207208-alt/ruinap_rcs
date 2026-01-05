@@ -1,5 +1,7 @@
 package com.ruinap.infra.framework.test;
 
+import org.junit.jupiter.api.extension.ExtendWith;
+
 import java.lang.annotation.*;
 
 /**
@@ -10,6 +12,7 @@ import java.lang.annotation.*;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @Inherited
+@ExtendWith(SpringRunner.class)
 public @interface SpringBootTest {
     /**
      * 指定启动类或配置类

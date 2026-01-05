@@ -1,4 +1,4 @@
-package com.ruinap.persistence.db.database;
+package com.ruinap.persistence.database;
 
 import cn.hutool.core.lang.Console;
 import cn.hutool.db.Entity;
@@ -6,13 +6,12 @@ import cn.hutool.db.PageResult;
 import cn.hutool.db.sql.Condition;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.test.SpringBootTest;
-import com.ruinap.infra.framework.test.SpringRunner;
 import com.ruinap.persistence.datasource.RcsDSFactory;
 import com.ruinap.persistence.repository.BaseDao;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -21,8 +20,8 @@ import java.util.List;
  * CommonDB 全面测试用例
  * 针对表: rcs_task
  */
-@RunWith(SpringRunner.class)
 @SpringBootTest
+@DisplayName("基础DAO(BaseDao)测试")
 public class BaseDaoTest extends BaseDao {
 
     private static final String TABLE = "rcs_task";
@@ -33,7 +32,7 @@ public class BaseDaoTest extends BaseDao {
     /**
      * 每次测试前清空表并初始化基础数据，确保测试环境纯净
      */
-    @Before
+    @BeforeEach // 替换 @Before
     public void initData() throws SQLException {
 //        RcsDSFactory.startup();
 //        // 1. 清空表
@@ -86,7 +85,7 @@ public class BaseDaoTest extends BaseDao {
         List<Entity> list = selectList(factory.db, TABLE, where);
 
         Console.log("LIKE 测试结果数: {}", list.size());
-        Assert.assertTrue(list.size() >= 1);
+        Assertions.assertTrue(list.size() >= 1);
     }
 
     @Test
@@ -96,7 +95,7 @@ public class BaseDaoTest extends BaseDao {
         List<Entity> list = selectList(factory.db, TABLE, where);
 
         Console.log("IN (String) 测试结果数: {}", list.size());
-        Assert.assertTrue(list.size() >= 1);
+        Assertions.assertTrue(list.size() >= 1);
     }
 
     @Test
@@ -106,7 +105,7 @@ public class BaseDaoTest extends BaseDao {
         List<Entity> list = selectList(factory.db, TABLE, where);
 
         Console.log("IN (Array) 测试结果数: {}", list.size());
-        Assert.assertTrue(list.size() >= 1);
+        Assertions.assertTrue(list.size() >= 1);
     }
 
     @Test
@@ -116,7 +115,7 @@ public class BaseDaoTest extends BaseDao {
         List<Entity> list = selectList(factory.db, TABLE, where);
 
         Console.log(">= 测试结果数: {}", list.size());
-        Assert.assertTrue(list.size() >= 1);
+        Assertions.assertTrue(list.size() >= 1);
     }
 
     @Test
@@ -124,7 +123,7 @@ public class BaseDaoTest extends BaseDao {
         Entity where = Entity.create().set("destin", "is null");
         List<Entity> list = selectList(factory.db, TABLE, where);
         Console.log(">= 测试结果数: {}", list.size());
-        Assert.assertTrue(list.size() >= 1);
+        Assertions.assertTrue(list.size() >= 1);
     }
 
     // =========================================================================
@@ -135,8 +134,8 @@ public class BaseDaoTest extends BaseDao {
     @Test
     public void testCondition_Equals() throws SQLException {
         List<Entity> list = selectList(factory.db, TABLE, new Condition("task_code", "=", "T0000001664"));
-        Assert.assertEquals(1, list.size());
-        Assert.assertEquals("G0000001629", list.getFirst().getStr("task_group"));
+        Assertions.assertEquals(1, list.size());
+        Assertions.assertEquals("G0000001629", list.getFirst().getStr("task_group"));
     }
 
     @Test
@@ -144,7 +143,7 @@ public class BaseDaoTest extends BaseDao {
         // 查询 equipment_code != 'AGV_01'
         List<Entity> list = selectList(factory.db, TABLE, new Condition("equipment_code", "!=", "1"), new Condition("equipment_code", "!=", "2"));
         Console.log(">= 测试结果数: {}", list.size());
-        Assert.assertTrue(list.size() >= 1);
+        Assertions.assertTrue(list.size() >= 1);
     }
 
     @Test
@@ -152,7 +151,7 @@ public class BaseDaoTest extends BaseDao {
         // 模糊查询: like %回充%
         List<Entity> list = selectList(factory.db, TABLE, new Condition("task_code", "like", "%18%"));
         Console.log(">= 测试结果数: {}", list.size());
-        Assert.assertFalse(list.isEmpty());
+        Assertions.assertFalse(list.isEmpty());
     }
 
     @Test
@@ -163,7 +162,7 @@ public class BaseDaoTest extends BaseDao {
                 new Condition("task_priority", "<=", 201)
         );
         Console.log(">= 测试结果数: {}", list.size());
-        Assert.assertFalse(list.isEmpty());
+        Assertions.assertFalse(list.isEmpty());
     }
 
     @Test
@@ -183,7 +182,7 @@ public class BaseDaoTest extends BaseDao {
 
         Console.log("Between(>= <=) 测试结果数: {}", list.size());
         // 断言根据你的实际数据调整，只要查出来就行
-        Assert.assertTrue(list.size() >= 0);
+        Assertions.assertTrue(list.size() >= 0);
     }
 
     // =========================================================================
@@ -200,8 +199,8 @@ public class BaseDaoTest extends BaseDao {
         // 测试 selectBean (? 占位符)
         RcsTask task = selectBean(factory.db, "SELECT * FROM " + TABLE + " WHERE id = ?", RcsTask.class, id);
 
-        Assert.assertNotNull(task);
-        Assert.assertEquals("T0000001127", task.getTaskCode());
+        Assertions.assertNotNull(task);
+        Assertions.assertEquals("T0000001127", task.getTaskCode());
         Console.log("Bean查询成功: {}", task);
     }
 
@@ -213,8 +212,8 @@ public class BaseDaoTest extends BaseDao {
         List<RcsTask> tasks = queryListBean(factory.db, sql, RcsTask.class, 0, 0);
 
         // 预期只有 T1001 (state=2). T1003(state=0)不满足 > 0
-        Assert.assertEquals(1, tasks.size());
-        Assert.assertEquals("20241203071", tasks.getFirst().getTaskCode());
+        Assertions.assertEquals(1, tasks.size());
+        Assertions.assertEquals("20241203071", tasks.getFirst().getTaskCode());
     }
 
     // =========================================================================
@@ -228,13 +227,13 @@ public class BaseDaoTest extends BaseDao {
         Entity where = Entity.create().set("task_type", 0); // 只查搬运任务
         PageResult<RcsTask> page1 = selectPageBean(factory.db, TABLE, 1, 3, where, RcsTask.class);
 
-        Assert.assertEquals(3, page1.size()); // 当前页数量
-        Assert.assertTrue(page1.getTotal() >= 8); // 总数 (初始2 + 新增6 = 8个搬运任务)
-        Assert.assertEquals(1, page1.getPage()); // 页码
+        Assertions.assertEquals(3, page1.size()); // 当前页数量
+        Assertions.assertTrue(page1.getTotal() >= 8); // 总数 (初始2 + 新增6 = 8个搬运任务)
+        Assertions.assertEquals(1, page1.getPage()); // 页码
 
         // 查第 2 页
         PageResult<RcsTask> page2 = selectPageBean(factory.db, TABLE, 2, 3, where, RcsTask.class);
-        Assert.assertEquals(3, page2.size());
+        Assertions.assertEquals(3, page2.size());
 
         Console.log("分页测试: 总数={}, 当前页={}", page1.getTotal(), page1.size());
     }
@@ -252,7 +251,7 @@ public class BaseDaoTest extends BaseDao {
 
         // 验证两条都插入成功
         long count = count(factory.db, TABLE, Entity.create().set("task_code", "like TX_COMMIT%"));
-        Assert.assertEquals(2, count);
+        Assertions.assertEquals(2, count);
     }
 
     @Test
@@ -277,7 +276,7 @@ public class BaseDaoTest extends BaseDao {
         // 验证回滚：应该查不到 TX_ROLLBACK_1
         try {
             long count = count(factory.db, TABLE, Entity.create().set("task_code", "TX_ROLLBACK_1"));
-            Assert.assertEquals(0, count);
+            Assertions.assertEquals(0, count);
             Console.log("事务回滚测试通过");
         } catch (SQLException e) {
             e.printStackTrace();
@@ -294,19 +293,19 @@ public class BaseDaoTest extends BaseDao {
         Entity updateBody = Entity.create().set("remark", "已更新").set("destin", "D1");
         Entity where = Entity.create().set("task_code", "TX_COMMIT_2");
         int updated = update(factory.db, TABLE, updateBody, where);
-        Assert.assertEquals(1, updated);
+        Assertions.assertEquals(1, updated);
 
         // 验证更新
         Entity afterUpdate = select(factory.db, TABLE, where);
-        Assert.assertEquals("已更新", afterUpdate.getStr("remark"));
+        Assertions.assertEquals("已更新", afterUpdate.getStr("remark"));
 
         // 2. Delete
         int deleted = delete(factory.db, TABLE, where);
-        Assert.assertEquals(1, deleted);
+        Assertions.assertEquals(1, deleted);
 
         // 验证删除
         Entity afterDelete = select(factory.db, TABLE, where);
-        Assert.assertNull(afterDelete);
+        Assertions.assertNull(afterDelete);
     }
 
 
