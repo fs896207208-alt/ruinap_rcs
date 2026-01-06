@@ -1,126 +1,213 @@
 package com.ruinap.infra.config;
 
-import cn.hutool.core.io.FileUtil;
-import cn.hutool.crypto.SecureUtil;
+import cn.hutool.core.util.ReflectUtil;
 import com.ruinap.infra.config.pojo.LinkConfig;
 import com.ruinap.infra.config.pojo.link.LinkEntity;
+import com.ruinap.infra.config.pojo.link.TransferLinkEntity;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.Environment;
 import org.junit.jupiter.api.*;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 
-import java.io.File;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.mockito.ArgumentMatchers.*;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
  * @author qianye
  * @create 2025-12-24 17:15
  */
-@DisplayName("连接配置(LinkYaml)测试")
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class LinkYamlTest {
 
-    @Mock
-    private Environment environment;
-    @Mock
-    private ApplicationContext ctx;
-
-    @InjectMocks
     private LinkYaml linkYaml;
-
-    // 静态 Mock 对象
-    private MockedStatic<FileUtil> fileUtilMock;
-    private MockedStatic<SecureUtil> secureUtilMock;
-    private AutoCloseable mockitoCloseable;
+    private Environment mockEnv;
+    private ApplicationContext mockCtx;
+    private LinkConfig mockConfig;
 
     @BeforeEach
     void setUp() {
-        // JUnit 6 初始化
-        mockitoCloseable = MockitoAnnotations.openMocks(this);
-        // 初始化静态 Mock (Hutool)
-        fileUtilMock = mockStatic(FileUtil.class);
-        secureUtilMock = mockStatic(SecureUtil.class);
+        MockitoAnnotations.openMocks(this);
+
+        // 1. 初始化待测对象
+        linkYaml = new LinkYaml();
+
+        // 2. Mock 依赖
+        mockEnv = mock(Environment.class);
+        mockCtx = mock(ApplicationContext.class);
+
+        // Mock POJO 对象 (因为没有源码，只能 Mock)
+        mockConfig = mock(LinkConfig.class);
+
+        // 3. 注入依赖
+        ReflectUtil.setFieldValue(linkYaml, "environment", mockEnv);
+        ReflectUtil.setFieldValue(linkYaml, "ctx", mockCtx);
     }
 
-    @AfterEach
-    void tearDown() throws Exception {
-        // 必须关闭静态 Mock，否则会污染其他测试
-        if (fileUtilMock != null) fileUtilMock.close();
-        if (secureUtilMock != null) secureUtilMock.close();
-        if (mockitoCloseable != null) mockitoCloseable.close();
-    }
+    // ==========================================
+    // 1. 生命周期测试 (Init & Rebind)
+    // ==========================================
 
     @Test
-    @DisplayName("测试：检查更新与热重载")
-    void testCheckAndReload() {
-        // --- 模拟热更新流程 ---
-        File mockFile = mock(File.class);
-        // 模拟 FileUtil 返回 mockFile
-        fileUtilMock.when(() -> FileUtil.newFile(anyString())).thenReturn(mockFile);
-        when(mockFile.exists()).thenReturn(true);
-        // 模拟 Environment 返回新配置
-        when(environment.bind(eq("rcs_link"), eq(LinkConfig.class))).thenReturn(new LinkConfig());
+    @Order(1)
+    @DisplayName("初始化流程验证")
+    void testInitialize() {
+        System.out.println("★ 1. 测试初始化 (Initialize)");
 
-        // 1. 初始化
-        secureUtilMock.when(() -> SecureUtil.md5(mockFile)).thenReturn("md5_A");
-        linkYaml.initialize();
-
-        // 2. 检查更新 (指纹变更为 md5_B)
-        secureUtilMock.when(() -> SecureUtil.md5(mockFile)).thenReturn("md5_B");
-
-        // TODO: 如果 LinkYaml 实现了 checkAndReload 方法，请解开下行注释
-        // boolean changed = linkYaml.checkAndReload();
-
-        // --- 验证 (严格保留原有逻辑，即使它是注释掉的) ---
-        // Assertions.assertTrue(changed, "指纹变化时应返回 true");
-
-        // 验证重新扫描
-        // verify(environment, times(1)).scanAndLoad(anyString());
-        // 验证重新绑定
-        // verify(environment, times(2)).bind(eq("rcs_link"), eq(LinkConfig.class));
-        // 验证事件发布
-        // verify(ctx, times(1)).publishEvent(any(RcsLinkConfigRefreshEvent.class));
-    }
-
-    @Test
-    @DisplayName("测试：配置逻辑处理")
-    void testHandlerLinkConfigLogic() {
-        // 专门测试配置合并逻辑 (完全保留原数据构造)
-        LinkConfig config = new LinkConfig();
-        LinkEntity entity = new LinkEntity();
-
-        // 通用配置
-        Map<String, String> common = new HashMap<>();
-        common.put("timeout", "3000");
-        entity.setCommon(common);
-
-        // 具体配置
-        Map<String, Map<String, String>> links = new HashMap<>();
-        Map<String, String> item = new HashMap<>();
-        item.put("ip", "1.1.1.1");
-        links.put("A01", item);
-        entity.setLinks(links);
-
-        config.setAgvLink(entity);
-
-        when(environment.bind(anyString(), any())).thenReturn(config);
-
-        // 忽略文件操作，只关注逻辑
-        File mockFile = mock(File.class);
-        fileUtilMock.when(() -> FileUtil.newFile(anyString())).thenReturn(mockFile);
-        when(mockFile.exists()).thenReturn(true);
-        secureUtilMock.when(() -> SecureUtil.md5(mockFile)).thenReturn("md5_X");
+        // 模拟 Environment 返回 Mock 的 Config 对象
+        when(mockEnv.bind(eq("rcs_link"), eq(LinkConfig.class))).thenReturn(mockConfig);
 
         // 执行初始化
-        linkYaml.initialize();
+        // 注意：handlerLinkConfig 会尝试反射 mockConfig，
+        // 由于 Mock 对象没有真实字段，反射循环通常会直接跳过，不会报错，这符合预期。
+        assertDoesNotThrow(() -> linkYaml.initialize());
 
-        // 验证逻辑 (此处假设 initialize 会读取 config 并进行内部处理，我们不做额外断言，仅保证跑通)
-        Assertions.assertNotNull(linkYaml, "LinkYaml 实例不应为空");
+        // 验证 config 字段被赋值
+        Object actualConfig = ReflectUtil.getFieldValue(linkYaml, "config");
+        assertEquals(mockConfig, actualConfig);
+
+        System.out.println("   [PASS] 初始化成功");
+    }
+
+    @Test
+    @Order(2)
+    @DisplayName("热重载流程验证")
+    void testRebind() {
+        System.out.println("★ 2. 测试热重载 (Rebind)");
+
+        when(mockEnv.bind(eq("rcs_link"), eq(LinkConfig.class))).thenReturn(mockConfig);
+
+        // 执行重载
+        linkYaml.rebind();
+
+        // 验证重新绑定
+        verify(mockEnv, times(1)).bind("rcs_link", LinkConfig.class);
+        // LinkYaml 的 rebind 没有发布事件，所以不需要验证 publishEvent
+
+        System.out.println("   [PASS] 热重载调用成功");
+    }
+
+    // ==========================================
+    // 2. AGV 配置读取测试
+    // ==========================================
+
+    @Test
+    @Order(3)
+    @DisplayName("AGV 配置读取 - 正常与空值")
+    void testGetAgvLink() {
+        System.out.println("★ 3. 测试 AGV 配置读取");
+
+        // 场景 1: 正常数据
+        LinkEntity mockAgvEntity = mock(LinkEntity.class);
+        Map<String, Map<String, String>> agvLinks = new HashMap<>();
+        Map<String, String> agv1 = new HashMap<>();
+        agv1.put("ip", "192.168.1.100");
+        agvLinks.put("AGV_001", agv1);
+
+        when(mockConfig.getAgvLink()).thenReturn(mockAgvEntity);
+        when(mockAgvEntity.getLinks()).thenReturn(agvLinks);
+
+        // 注入 Config
+        ReflectUtil.setFieldValue(linkYaml, "config", mockConfig);
+
+        // 验证
+        Map<String, Map<String, String>> resultAll = linkYaml.getAgvLink();
+        assertEquals(1, resultAll.size());
+        assertEquals("192.168.1.100", resultAll.get("AGV_001").get("ip"));
+
+        // 验证单个获取
+        Map<String, String> resultSingle = linkYaml.getAgvLink("AGV_001");
+        assertNotNull(resultSingle);
+        assertEquals("192.168.1.100", resultSingle.get("ip"));
+
+        // 场景 2: 数据为空 (Entity 存在但 Map 为空)
+        when(mockAgvEntity.getLinks()).thenReturn(Collections.emptyMap());
+        assertTrue(linkYaml.getAgvLink().isEmpty());
+
+        // 场景 3: Entity 为 null
+        when(mockConfig.getAgvLink()).thenReturn(null);
+        assertTrue(linkYaml.getAgvLink().isEmpty());
+    }
+
+    // ==========================================
+    // 3. 充电桩配置读取测试
+    // ==========================================
+
+    @Test
+    @Order(4)
+    @DisplayName("充电桩配置读取")
+    void testGetChargeLink() {
+        System.out.println("★ 4. 测试充电桩配置读取");
+
+        LinkEntity mockChargeEntity = mock(LinkEntity.class);
+        Map<String, Map<String, String>> chargeLinks = new HashMap<>();
+        Map<String, String> charger1 = new HashMap<>();
+        charger1.put("type", "V5");
+        chargeLinks.put("C_01", charger1);
+
+        when(mockConfig.getChargeLink()).thenReturn(mockChargeEntity);
+        when(mockChargeEntity.getLinks()).thenReturn(chargeLinks);
+
+        ReflectUtil.setFieldValue(linkYaml, "config", mockConfig);
+
+        assertEquals("V5", linkYaml.getChargeLink().get("C_01").get("type"));
+        assertEquals("V5", linkYaml.getChargeLink("C_01").get("type"));
+    }
+
+    // ==========================================
+    // 4. 中转站配置读取测试
+    // ==========================================
+
+    @Test
+    @Order(5)
+    @DisplayName("中转站配置读取")
+    void testGetTransferLink() {
+        System.out.println("★ 5. 测试中转站配置读取");
+
+        TransferLinkEntity mockTransferEntity = mock(TransferLinkEntity.class);
+        Map<String, String> transferMap = new HashMap<>();
+        transferMap.put("url", "http://transfer.local");
+
+        when(mockConfig.getTransferLink()).thenReturn(mockTransferEntity);
+        when(mockTransferEntity.getLink()).thenReturn(transferMap);
+
+        ReflectUtil.setFieldValue(linkYaml, "config", mockConfig);
+
+        Map<String, String> result = linkYaml.getTransferLink();
+        assertEquals("http://transfer.local", result.get("url"));
+
+        // 验证空值防御
+        when(mockConfig.getTransferLink()).thenReturn(null);
+        assertTrue(linkYaml.getTransferLink().isEmpty());
+    }
+
+    // ==========================================
+    // 5. 健壮性测试 (Null Safety)
+    // ==========================================
+
+    @Test
+    @Order(6)
+    @DisplayName("配置整体为 Null 时的安全性")
+    void testGlobalNullSafety() {
+        System.out.println("★ 6. 测试全局 Null 安全性");
+
+        // 将 config 置为 null (模拟未初始化状态)
+        ReflectUtil.setFieldValue(linkYaml, "config", null);
+
+        // 验证所有 Getter 是否能安全返回空集合，而不是抛出 NPE
+        assertNotNull(linkYaml.getAgvLink());
+        assertTrue(linkYaml.getAgvLink().isEmpty());
+
+        assertNotNull(linkYaml.getChargeLink());
+        assertTrue(linkYaml.getChargeLink().isEmpty());
+
+        assertNotNull(linkYaml.getTransferLink());
+        assertTrue(linkYaml.getTransferLink().isEmpty());
+
+        System.out.println("   [PASS] 健壮性测试通过");
     }
 }

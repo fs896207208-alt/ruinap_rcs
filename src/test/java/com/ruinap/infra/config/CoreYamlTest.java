@@ -1,20 +1,16 @@
 package com.ruinap.infra.config;
 
-import cn.hutool.core.io.FileUtil;
-import cn.hutool.crypto.SecureUtil;
+import cn.hutool.core.util.ReflectUtil;
 import com.ruinap.infra.config.pojo.CoreConfig;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.Environment;
 import com.ruinap.infra.framework.core.event.RcsCoreConfigRefreshEvent;
 import org.junit.jupiter.api.*;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockedStatic;
-import org.mockito.MockitoAnnotations;
+import org.mockito.ArgumentCaptor;
 
-import java.io.File;
 import java.util.LinkedHashMap;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -25,111 +21,187 @@ import static org.mockito.Mockito.*;
  * @author qianye
  * @create 2025-12-24 17:06
  */
-@DisplayName("核心配置(CoreYaml)测试")
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class CoreYamlTest {
 
-    @Mock
-    private Environment environment; // 模拟 IOC 环境
-
-    @Mock
-    private ApplicationContext ctx;  // 模拟容器上下文（用于验证事件发布）
-
-    @InjectMocks
-    private CoreYaml coreYaml;       // 被测对象
-
-    private CoreConfig mockConfig;   // 模拟的配置数据
-
-    // 静态方法的 Mock 控制器
-    private MockedStatic<FileUtil> fileUtilMock;
-    private MockedStatic<SecureUtil> secureUtilMock;
-    private AutoCloseable mockitoCloseable;
+    private static CoreYaml coreYaml;
+    private static ApplicationContext mockCtx;
+    private static Environment mockEnv;
+    private static CoreConfig mockConfig;
 
     @BeforeEach
-    public void setUp() {
-        // JUnit 6 初始化
-        mockitoCloseable = MockitoAnnotations.openMocks(this);
+    void setUp() {
+        // 1. 初始化待测对象
+        coreYaml = new CoreYaml();
 
-        // 1. 准备测试数据 (严格保留)
-        mockConfig = new CoreConfig();
-        LinkedHashMap<String, String> rcsSys = new LinkedHashMap<>();
-        rcsSys.put("develop", "true");
-        mockConfig.setRcsSys(rcsSys);
-        // 防止 NPE
-        mockConfig.setRcsPort(new LinkedHashMap<>());
-        mockConfig.setAlgorithmCommon(new LinkedHashMap<>());
+        // 2. Mock 依赖
+        mockCtx = mock(ApplicationContext.class);
+        mockEnv = mock(Environment.class);
+        mockConfig = mock(CoreConfig.class);
 
-        // 2. 开启静态方法 Mock (接管 Hutool 的行为)
-        fileUtilMock = mockStatic(FileUtil.class);
-        secureUtilMock = mockStatic(SecureUtil.class);
+        // 3. 注入依赖
+        ReflectUtil.setFieldValue(coreYaml, "ctx", mockCtx);
+        ReflectUtil.setFieldValue(coreYaml, "environment", mockEnv);
     }
 
-    @AfterEach
-    public void tearDown() throws Exception {
-        // 3. 必须关闭静态 Mock，避免污染其他测试
-        if (fileUtilMock != null) fileUtilMock.close();
-        if (secureUtilMock != null) secureUtilMock.close();
+    // ==========================================
+    // 1. 初始化与绑定测试
+    // ==========================================
 
-        // 关闭 Mockito 资源
-        if (mockitoCloseable != null) mockitoCloseable.close();
+    @Test
+    @Order(1)
+    @DisplayName("初始化成功测试")
+    void testInitialize_Success() {
+        System.out.println("★ 1. 测试初始化 (Initialize)");
+
+        // 模拟 Environment 绑定成功
+        when(mockEnv.bind(eq("rcs_core"), eq(CoreConfig.class))).thenReturn(mockConfig);
+
+        // 执行初始化
+        coreYaml.initialize();
+
+        // 验证 config 字段是否被正确赋值
+        Object actualConfig = ReflectUtil.getFieldValue(coreYaml, "config");
+        assertNotNull(actualConfig);
+        assertEquals(mockConfig, actualConfig);
+        System.out.println("   [PASS] 配置绑定成功");
     }
 
     @Test
-    @DisplayName("测试：初始化加载")
-    public void testInitialize() {
-        // --- 准备 ---
-        // 模拟 environment.bind 返回我们准备好的 mockConfig
-        when(environment.bind(eq("rcs_core"), eq(CoreConfig.class))).thenReturn(mockConfig);
+    @Order(2)
+    @DisplayName("初始化失败测试 (配置不存在)")
+    void testInitialize_Failure() {
+        System.out.println("★ 2. 测试初始化失败 (配置缺失)");
 
-        // 模拟文件存在检查 (尽管 initialize 不强求文件存在，但逻辑里有 newFile)
-        File mockFile = mock(File.class);
-        when(mockFile.exists()).thenReturn(true);
-        fileUtilMock.when(() -> FileUtil.newFile(anyString())).thenReturn(mockFile);
+        // 模拟 Environment 返回 null
+        when(mockEnv.bind(any(), any())).thenReturn(null);
 
-        // --- 执行 ---
-        coreYaml.initialize();
-
-        // --- 验证 ---
-        // JUnit 6: assertEquals(expected, actual, message) - 参数顺序修正
-        Assertions.assertEquals("true", coreYaml.getDevelop(), "配置读取失败");
-
-        // 验证 bind 方法被调用了 1 次
-        verify(environment, times(1)).bind(eq("rcs_core"), eq(CoreConfig.class));
+        // 验证是否抛出运行时异常
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> coreYaml.initialize());
+        assertTrue(ex.getMessage().contains("CoreYaml 初始化失败"));
+        System.out.println("   [PASS] 成功捕获初始化异常");
     }
 
     @Test
-    @DisplayName("测试：热更新流程")
-    public void testRequestReloadFlow() {
-        // --- 场景模拟：文件发生了变化，触发热更新 ---
+    @Order(3)
+    @DisplayName("热加载测试 (Rebind)")
+    void testRebind() {
+        System.out.println("★ 3. 测试热加载 (Rebind)");
 
-        // 1. 模拟物理文件对象
-        File mockFile = mock(File.class);
-        fileUtilMock.when(() -> FileUtil.newFile(anyString())).thenReturn(mockFile);
-        when(mockFile.exists()).thenReturn(true); // 文件始终存在
+        when(mockEnv.bind(eq("rcs_core"), eq(CoreConfig.class))).thenReturn(mockConfig);
 
-        // 2. 模拟 Environment 行为
-        when(environment.bind(eq("rcs_core"), eq(CoreConfig.class))).thenReturn(mockConfig);
+        // 执行热加载
+        coreYaml.rebind();
 
-        // --- 步骤 A: 初始化 (记录旧指纹) ---
-        // 模拟第一次计算 MD5 为 "hash_v1"
-        secureUtilMock.when(() -> SecureUtil.md5(mockFile)).thenReturn("hash_v1");
+        // 验证：
+        // 1. 重新调用了 bind 方法
+        verify(mockEnv, times(1)).bind("rcs_core", CoreConfig.class);
 
+        // 2. 发布了 RcsCoreConfigRefreshEvent 事件
+        ArgumentCaptor<RcsCoreConfigRefreshEvent> eventCaptor = ArgumentCaptor.forClass(RcsCoreConfigRefreshEvent.class);
+        verify(mockCtx, times(1)).publishEvent(eventCaptor.capture());
+
+        assertNotNull(eventCaptor.getValue());
+        assertEquals(coreYaml, eventCaptor.getValue().getSource());
+        System.out.println("   [PASS] 热加载并发布事件成功");
+    }
+
+    // ==========================================
+    // 2. Getter 与默认值测试
+    // ==========================================
+
+    @Test
+    @Order(4)
+    @DisplayName("参数读取 - 正常值")
+    void testGetters_WithValues() {
+        System.out.println("★ 4. 测试 Getter (正常值)");
+
+        // [重点修复] 严格使用 LinkedHashMap 构造模拟数据
+        LinkedHashMap<String, Integer> threadPoolMap = new LinkedHashMap<>();
+        threadPoolMap.put("core_pool_size", 10);
+        threadPoolMap.put("max_pool_size", 20);
+        threadPoolMap.put("queue_capacity", 500);
+
+        LinkedHashMap<String, Integer> portMap = new LinkedHashMap<>();
+        portMap.put("web_port", 8080);
+        portMap.put("netty_websocket_port", 8081);
+
+        // 配置 Mock 行为
+        when(mockConfig.getRcsThreadPool()).thenReturn(threadPoolMap);
+        when(mockConfig.getRcsPort()).thenReturn(portMap);
+
+        // 必须让 initialize 成功才能测 getter
+        when(mockEnv.bind(any(), any())).thenReturn(mockConfig);
         coreYaml.initialize();
 
-        // --- 步骤 B: 触发热更新 (发现新指纹) ---
-        // 模拟第二次计算 MD5 为 "hash_v2" (指纹变了！)
-        secureUtilMock.when(() -> SecureUtil.md5(mockFile)).thenReturn("hash_v2");
+        // 验证读取结果
+        assertEquals(10, coreYaml.getAlgoCorePoolSize());
+        assertEquals(20, coreYaml.getAlgoMaxPoolSize());
+        assertEquals(500, coreYaml.getAlgoQueueCapacity());
+        assertEquals(8080, coreYaml.getWebPort());
+        assertEquals(8081, coreYaml.getNettyWebsocketPort());
 
-//        coreYaml.requestReload();
+        System.out.println("   [PASS] 读取配置值正确");
+    }
 
-        // --- 验证核心逻辑 ---
+    @Test
+    @Order(5)
+    @DisplayName("参数读取 - 默认值兜底")
+    void testGetters_Defaults() {
+        System.out.println("★ 5. 测试 Getter (默认值兜底)");
 
-        // 1. 验证 Environment 确实被要求重新扫描磁盘了 (scanAndLoad)
-        verify(environment, times(1)).scanAndLoad(anyString());
+        // 场景：配置对象存在，但具体 Map 为 null 或空
+        when(mockConfig.getRcsThreadPool()).thenReturn(null);
+        // [重点修复] 返回空的 LinkedHashMap
+        when(mockConfig.getRcsPort()).thenReturn(new LinkedHashMap<>());
 
-        // 2. 验证 bind 被调用了 2 次 (初始化 1 次 + 重载 1 次)
-        verify(environment, times(2)).bind(eq("rcs_core"), eq(CoreConfig.class));
+        when(mockEnv.bind(any(), any())).thenReturn(mockConfig);
+        coreYaml.initialize();
 
-        // 3. 验证是否发布了 RcsCoreConfigRefreshEvent 事件
-        verify(ctx, times(1)).publishEvent(any(RcsCoreConfigRefreshEvent.class));
+        // 验证默认值逻辑
+        // 线程池核心数默认 = CPU核数 + 1
+        int expectedCore = Runtime.getRuntime().availableProcessors() + 1;
+
+        assertEquals(expectedCore, coreYaml.getAlgoCorePoolSize(), "核心线程数应有默认值");
+        assertEquals(expectedCore, coreYaml.getAlgoMaxPoolSize(), "最大线程数应有默认值");
+        assertEquals(2048, coreYaml.getAlgoQueueCapacity(), "队列容量应有默认值");
+        assertEquals(60, coreYaml.getAlgoKeepAliveSeconds(), "存活时间应有默认值");
+
+        assertEquals(9090, coreYaml.getWebPort(), "Web端口应有默认值");
+        assertEquals(9091, coreYaml.getNettyWebsocketPort(), "WS端口应有默认值");
+
+        // 场景：Config 对象本身为 null (模拟极端情况)
+        ReflectUtil.setFieldValue(coreYaml, "config", null);
+        assertEquals(expectedCore, coreYaml.getAlgoCorePoolSize());
+        assertEquals(9092, coreYaml.getNettyMqttPort());
+
+        System.out.println("   [PASS] 默认值机制生效");
+    }
+
+    @Test
+    @Order(6)
+    @DisplayName("基础信息读取")
+    void testBasicInfo() {
+        System.out.println("★ 6. 测试基础信息 (Sys Config)");
+
+        // [重点修复] 使用 LinkedHashMap
+        LinkedHashMap<String, String> sysMap = new LinkedHashMap<>();
+        sysMap.put("develop", "true");
+        sysMap.put("enable_arthas", "false");
+
+        when(mockConfig.getRcsSys()).thenReturn(sysMap);
+        when(mockEnv.bind(any(), any())).thenReturn(mockConfig);
+        coreYaml.initialize();
+
+        assertEquals("true", coreYaml.getDevelop());
+        assertEquals("false", coreYaml.getEnableArthas());
+        assertEquals("rcs_core", coreYaml.getSourceName());
+
+        // 验证 Timer Map 读取
+        LinkedHashMap<String, LinkedHashMap<String, String>> timerMap = new LinkedHashMap<>();
+        when(mockConfig.getRcsTimer()).thenReturn(timerMap);
+        assertNotNull(coreYaml.getTimerCommon());
+
+        System.out.println("   [PASS] 基础信息读取正确");
     }
 }

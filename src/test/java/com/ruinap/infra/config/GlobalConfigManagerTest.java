@@ -11,8 +11,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -40,90 +39,77 @@ class GlobalConfigManagerTest {
 
     @BeforeEach
     void setUp() {
-        // JUnit 6: 手动初始化 Mock 注入
         mockitoCloseable = MockitoAnnotations.openMocks(this);
     }
 
     @AfterEach
     void tearDown() throws Exception {
-        // 及时关闭 Mock 资源
         if (mockitoCloseable != null) {
             mockitoCloseable.close();
         }
     }
 
     @Test
-    @DisplayName("测试：全量重载成功 (Happy Path)")
-    void testReloadAll_Success() {
-        // --- 1. 准备数据 ---
-        // 模拟容器中存在的两个可重载配置 Bean
-        ReloadableConfig mockCore = mock(ReloadableConfig.class);
-        ReloadableConfig mockMap = mock(ReloadableConfig.class);
+    @DisplayName("场景1：精准更新 - 仅更新发生变化的文件")
+    void testReload_SelectiveUpdate() {
+        Set<String> changedFiles = new HashSet<>();
+        changedFiles.add("rcs_core");
+        when(environment.scanAndLoad(anyString())).thenReturn(changedFiles);
+
+        ReloadableConfig coreBean = mock(ReloadableConfig.class);
+        when(coreBean.getSourceName()).thenReturn("rcs_core");
+
+        ReloadableConfig mapBean = mock(ReloadableConfig.class);
+        when(mapBean.getSourceName()).thenReturn("rcs_map");
 
         Map<String, ReloadableConfig> beans = new HashMap<>();
-        beans.put("rcs_core", mockCore);
-        beans.put("rcs_map", mockMap);
+        beans.put("coreBean", coreBean);
+        beans.put("mapBean", mapBean);
 
-        // Mock 容器返回这些 Bean
         when(applicationContext.getBeansOfType(ReloadableConfig.class)).thenReturn(beans);
 
-        // --- 2. 执行 ---
         globalConfigManager.reloadAll();
 
-        // --- 3. 验证 ---
-        // 验证 Environment 是否执行了重新扫描加载
-        verify(environment, times(1)).scanAndLoad(anyString());
-
-        // 验证所有 Bean 是否都收到了 rebind 通知
-        verify(mockCore, times(1)).rebind();
-        verify(mockMap, times(1)).rebind();
+        verify(coreBean, times(1)).rebind();
+        verify(mapBean, never()).rebind();
+        System.out.println("   [PASS] 精准更新逻辑验证通过");
     }
 
     @Test
-    @DisplayName("测试：空容器重载 (Empty Beans)")
-    void testReloadAll_EmptyBeans() {
-        // --- 场景：容器里没有任何实现 ReloadableConfig 的 Bean ---
+    @DisplayName("场景2：性能优化 - 无文件变更时直接返回")
+    void testReload_NoChanges_EarlyReturn() {
+        when(environment.scanAndLoad(anyString())).thenReturn(Collections.emptySet());
 
-        // 模拟返回空 Map
-        when(applicationContext.getBeansOfType(ReloadableConfig.class)).thenReturn(new HashMap<>());
-
-        // 执行
         globalConfigManager.reloadAll();
 
-        // 验证：Environment 依然会被刷新 (虽然没人用，但基础配置加载动作必须做)
         verify(environment, times(1)).scanAndLoad(anyString());
-
-        // 验证：没有报错，流程正常结束
+        verify(applicationContext, never()).getBeansOfType(ReloadableConfig.class);
+        System.out.println("   [PASS] 性能优化(提前返回)验证通过");
     }
 
     @Test
-    @DisplayName("测试：异常隔离性 (Exception Safety)")
-    void testReloadAll_ExceptionSafety() {
-        // --- 场景：某个 Bean 重载失败，不应中断循环，必须保证其他 Bean 能正常更新 ---
+    @DisplayName("场景3：异常隔离 - 单个组件失败不影响整体")
+    void testReload_ExceptionSafety() {
+        Set<String> changedFiles = new HashSet<>(Arrays.asList("rcs_bad", "rcs_good"));
+        when(environment.scanAndLoad(anyString())).thenReturn(changedFiles);
+
+        ReloadableConfig badBean = mock(ReloadableConfig.class);
+        when(badBean.getSourceName()).thenReturn("rcs_bad");
+        doThrow(new RuntimeException("解析错误")).when(badBean).rebind();
 
         ReloadableConfig goodBean = mock(ReloadableConfig.class);
-        ReloadableConfig badBean = mock(ReloadableConfig.class);
-
-        // 模拟 badBean 抛出运行时异常
-        doThrow(new RuntimeException("配置格式错误")).when(badBean).rebind();
+        when(goodBean.getSourceName()).thenReturn("rcs_good");
 
         Map<String, ReloadableConfig> beans = new HashMap<>();
-        beans.put("goodBean", goodBean);
-        beans.put("badBean", badBean);
-
+        beans.put("bad", badBean);
+        beans.put("good", goodBean);
         when(applicationContext.getBeansOfType(ReloadableConfig.class)).thenReturn(beans);
 
-        // 执行 (预期内部会 catch 异常并打印日志，而不是抛出到外部)
         globalConfigManager.reloadAll();
 
-        // 验证：
-        // 1. 坏的 Bean 被调用过 (然后挂了)
         verify(badBean, times(1)).rebind();
-
-        // 2. 好的 Bean 依然被正常调用 (未受牵连)
         verify(goodBean, times(1)).rebind();
 
-        // 3. Environment 依然被刷新
-        verify(environment, times(1)).scanAndLoad(anyString());
+        System.out.println("   [PASS] 异常隔离性验证通过");
     }
 }

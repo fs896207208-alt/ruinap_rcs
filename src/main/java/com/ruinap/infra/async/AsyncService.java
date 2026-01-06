@@ -54,6 +54,36 @@ public class AsyncService {
     }
 
     /**
+     * 并行执行所有任务并等待完成
+     * <p>
+     * 场景：批量初始化、并行检查等不需要返回值的场景。
+     * </p>
+     *
+     * @param tasks 任务列表 (Runnable)
+     */
+    public void executeAll(List<Runnable> tasks) {
+        if (tasks == null || tasks.isEmpty()) {
+            return;
+        }
+
+        // 将所有 Runnable 包装为 CompletableFuture 并提交到虚拟线程池
+        // 使用 toArray(CompletableFuture[]::new) 转换为数组以适配 allOf
+        java.util.concurrent.CompletableFuture<?>[] futures = tasks.stream()
+                .map(task -> vThreadPool.runAsync(() -> {
+                    try {
+                        task.run();
+                    } catch (Exception e) {
+                        // 捕获异常，防止单个任务失败导致整体 join 抛出异常（视业务需求而定，这里选择记录日志保全大局）
+                        RcsLog.sysLog.error("AsyncService-executeAll 任务执行异常", e);
+                    }
+                }))
+                .toArray(java.util.concurrent.CompletableFuture[]::new);
+
+        // 阻塞等待所有任务执行完毕
+        java.util.concurrent.CompletableFuture.allOf(futures).join();
+    }
+
+    /**
      * 等待单个异步任务完成（带超时和默认值）
      * 严禁在 Netty I/O 线程或 Scheduler 线程中调用此方法
      * 在 Netty 线程中： AGV 系统会有大量的 Netty 回调（如接收 AGV报文）。如果在 ChannelHandler 中直接调用 AsyncUtils.waitAnyTask，join() 会阻塞 Netty 的 EventLoop 线程（平台线程）。

@@ -61,7 +61,7 @@ public class ConfigDB extends BaseDao {
      * @throws SQLException
      */
     public boolean checkProcedureExists() throws SQLException {
-        boolean flag = checkProcedureExists(factory.db, factory.dbSetting.getDatabaseName(), TABLE_NAME);
+        boolean flag = checkProcedureExists(factory.db, factory.dbSetting.getDatabaseName(), PROCEDURE_GETCONFIGVALUE);
         if (!flag) {
             String logStr = "数据库存储过程[" + PROCEDURE_GETCONFIGVALUE + "]不存在，请检查文件夹 doc/db 里是否存在创建该存储过程的SQL文件";
             RcsLog.consoleLog.error(logStr);

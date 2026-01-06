@@ -74,7 +74,7 @@ public class VthreadPool {
         // 调度器不需要 CPU 核心数那么多线程，因为它不执行业务，只负责抛出任务
         // 2-4 个线程足以驱动成千上万个定时任务
         scheduler = Executors.newScheduledThreadPool(
-                Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
+                Math.max(2, Runtime.getRuntime().availableProcessors() / 4),
                 new ThreadFactory() {
                     private final AtomicInteger count = new AtomicInteger(1);
 

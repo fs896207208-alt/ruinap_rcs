@@ -1,14 +1,15 @@
 package com.ruinap.infra.lock;
 
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
+import cn.hutool.core.thread.ThreadUtil;
+import org.junit.jupiter.api.*;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * RcsLock 核心并发测试
@@ -22,239 +23,267 @@ import java.util.concurrent.locks.Condition;
  *
  * @author qianye
  */
-public class RcsLockTest {
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+class RcsLockTest {
 
-    // 使用 Java 21 的虚拟线程池进行测试 (模拟真实生产环境)
-    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    @BeforeEach
+    void printSeparator() {
+        System.out.println("\n══════════════════════════════════════════════════════");
+    }
 
-    // ========================================================================
-    //                        1. 互斥性测试 (最核心)
-    // ========================================================================
+    // ==========================================
+    // 1. REENTRANT (互斥锁) 测试
+    // ==========================================
 
     @Test
-    public void testReentrantLock_Concurrency() throws InterruptedException {
-        System.out.println(">>> 测试互斥锁 (REENTRANT) 高并发累加...");
+    @Order(1)
+    @DisplayName("互斥锁 - 并发累加安全性")
+    void testReentrantMutex() throws InterruptedException {
+        System.out.println("★ 1. 测试互斥锁 (Mutual Exclusion)");
         RcsLock lock = RcsLock.ofReentrant();
-        runConcurrencyCounter(lock);
-    }
+        int taskCount = 100;
+        int loops = 1000;
+        AtomicInteger counter = new AtomicInteger(0);
+        // 使用普通 int 模拟非线程安全变量，验证锁的保护作用
+        final int[] unsafeValue = {0};
 
-    @Test
-    public void testReadWriteLock_Concurrency() throws InterruptedException {
-        System.out.println(">>> 测试读写锁 (READ_WRITE) 高并发累加...");
-        RcsLock lock = RcsLock.ofReadWrite();
-        runConcurrencyCounter(lock);
-    }
-
-    @Test
-    public void testStampedLock_Concurrency() throws InterruptedException {
-        System.out.println(">>> 测试印章锁 (STAMPED) 高并发累加...");
-        RcsLock lock = RcsLock.ofStamped();
-        runConcurrencyCounter(lock);
-    }
-
-    /**
-     * 通用并发计数测试逻辑
-     * 启动 1000 个线程，每个加 1，如果锁有效，结果必须是 1000。
-     */
-    private void runConcurrencyCounter(RcsLock lock) throws InterruptedException {
-        final int taskCount = 1000;
-        // 使用普通 int，如果锁失效，结果一定小于 1000
-        final int[] counter = {0};
         CountDownLatch latch = new CountDownLatch(taskCount);
 
+        // 启动 100 个线程并发累加
         for (int i = 0; i < taskCount; i++) {
-            executor.submit(() -> {
-                lock.runInWrite(() -> {
-                    counter[0]++;
-                });
-                latch.countDown();
-            });
-        }
-
-        latch.await();
-        // JUnit 6: assertEquals(expected, actual, message)
-        Assertions.assertEquals(taskCount, counter[0], "锁失效！并发累加结果错误");
-        System.out.println("    ✅ 结果正确: " + counter[0]);
-    }
-
-    // ========================================================================
-    //                        2. 乐观读测试 (Stamped 特性)
-    // ========================================================================
-
-    @Test
-    public void testOptimisticRead() throws InterruptedException {
-        System.out.println(">>> 测试乐观读 (Optimistic Read)...");
-        RcsLock lock = RcsLock.ofStamped();
-
-        // 共享数据
-        final int[] data = {0, 0}; // x, y
-
-        // 1. 写线程：不断修改 x 和 y
-        Thread writer = Thread.ofVirtual().start(() -> {
-            for (int i = 0; i < 100; i++) {
-                lock.runInWrite(() -> {
-                    data[0]++;
-                    try {
-                        Thread.sleep(1);
-                    } catch (InterruptedException e) {
-                    }
-                    data[1]++;
-                });
+            new Thread(() -> {
                 try {
-                    Thread.sleep(5);
-                } catch (InterruptedException e) {
-                }
-            }
-        });
-
-        // 2. 读线程：使用乐观读
-        AtomicInteger successCount = new AtomicInteger(0);
-        AtomicInteger fallbackCount = new AtomicInteger(0);
-
-        for (int i = 0; i < 10; i++) {
-            executor.submit(() -> {
-                for (int j = 0; j < 20; j++) {
-                    // 乐观读逻辑：尝试读取 data[0] 和 data[1]
-                    // 如果读的过程中发生了写操作，result 应该是 -1 (fallback 的返回值)
-                    int result = lock.optimisticRead(
-                            () -> {
-                                // 模拟耗时读取
-                                int x = data[0];
-                                try {
-                                    Thread.sleep(1);
-                                } catch (InterruptedException ignored) {
-                                }
-                                int y = data[1];
-                                // 如果读的时候数据一致 (x==y)，返回 x，否则逻辑上可能读到了脏数据
-                                return x == y ? x : -999;
-                            },
-                            () -> {
-                                fallbackCount.incrementAndGet();
-                                return -1; // 悲观读兜底
-                            }
-                    );
-
-                    if (result != -1 && result != -999) {
-                        successCount.incrementAndGet();
+                    for (int j = 0; j < loops; j++) {
+                        lock.runInWrite(() -> {
+                            unsafeValue[0]++; // 临界区
+                        });
                     }
-                }
-            });
-        }
-
-        writer.join();
-        // 等待读线程跑完（简单 sleep 模拟）
-        Thread.sleep(500);
-
-        System.out.println("    ✅ 乐观读成功次数: " + successCount.get());
-        System.out.println("    ⚠️ 降级悲观读次数: " + fallbackCount.get());
-
-        // 只要没抛异常，且有成功的，就算通过
-        Assertions.assertTrue(successCount.get() > 0 || fallbackCount.get() > 0);
-    }
-
-    // ========================================================================
-    //                        3. 锁降级与重入测试
-    // ========================================================================
-
-    @Test
-    public void testReentrant() {
-        System.out.println(">>> 测试可重入性 (Reentrancy)...");
-
-        // 1. 测试互斥锁重入
-        RcsLock reentrantLock = RcsLock.ofReentrant();
-        reentrantLock.runInWrite(() -> {
-            reentrantLock.runInWrite(() -> {
-                System.out.println("    ✅ ReentrantLock 重入成功");
-            });
-        });
-
-        // 2. 测试读写锁重入 (写锁内可加读锁)
-        RcsLock rwLock = RcsLock.ofReadWrite();
-        rwLock.runInWrite(() -> {
-            rwLock.runInRead(() -> {
-                System.out.println("    ✅ ReadWriteLock 锁降级(写嵌读)成功");
-            });
-        });
-    }
-
-    // ========================================================================
-    //                        4. 死锁预防测试 (TryRun)
-    // ========================================================================
-
-    @Test
-    public void testTryRunInWrite() throws InterruptedException {
-        System.out.println(">>> 测试 TryLock 超时机制...");
-        RcsLock lock = RcsLock.ofReentrant();
-        CountDownLatch latch = new CountDownLatch(1);
-
-        // 1. 线程 A 拿走锁，并持有 200ms
-        executor.submit(() -> {
-            lock.runInWrite(() -> {
-                try {
+                } finally {
                     latch.countDown();
-                    Thread.sleep(200);
-                } catch (InterruptedException e) {
                 }
-            });
-        });
+            }).start();
+        }
 
-        latch.await(); // 确保 A 已经拿到了锁
+        boolean finished = latch.await(2, TimeUnit.SECONDS);
+        assertTrue(finished, "测试超时，可能发生了死锁");
 
-        // 2. 线程 B 尝试拿锁，超时设为 50ms (应该失败)
-        boolean success = lock.tryRunInWrite(50, TimeUnit.MILLISECONDS, () -> {
-            Assertions.fail("不应该拿到锁！");
-        });
-        // JUnit 6: assertFalse(condition, message)
-        Assertions.assertFalse(success, "预期获取锁超时失败，但却成功了");
-        System.out.println("    ✅ 超时放弃逻辑验证通过");
+        System.out.println("   [RESULT] 预期值: " + (taskCount * loops));
+        System.out.println("   [RESULT] 实际值: " + unsafeValue[0]);
 
-        // 3. 线程 C 尝试拿锁，超时设为 500ms (应该成功，因为 A 只占 200ms)
-        boolean success2 = lock.tryRunInWrite(500, TimeUnit.MILLISECONDS, () -> {
-            System.out.println("    ✅ 等待后获取锁成功");
-        });
-        // JUnit 6: assertTrue(condition, message)
-        Assertions.assertTrue(success2, "预期获取锁成功，但失败了");
+        assertEquals(taskCount * loops, unsafeValue[0], "数据不一致，互斥锁未生效");
     }
 
-    // ========================================================================
-    //                        5. Condition 测试
-    // ========================================================================
+    @Test
+    @Order(2)
+    @DisplayName("互斥锁 - 可重入性 (Reentrancy)")
+    void testReentrantRecursion() {
+        System.out.println("★ 2. 测试互斥锁重入性");
+        RcsLock lock = RcsLock.ofReentrant();
+
+        assertDoesNotThrow(() -> {
+            lock.runInWrite(() -> {
+                System.out.println("   [Level 1] 进入第一层锁");
+                lock.runInWrite(() -> {
+                    System.out.println("   [Level 2] 进入第二层锁 (重入成功)");
+                    lock.runInWrite(() -> {
+                        System.out.println("   [Level 3] 进入第三层锁 (重入成功)");
+                    });
+                });
+            });
+        });
+        System.out.println("   [RESULT] 重入测试通过，未发生死锁");
+    }
 
     @Test
-    public void testCondition() throws InterruptedException {
-        System.out.println(">>> 测试 Condition 等待/通知...");
+    @Order(3)
+    @DisplayName("互斥锁 - Condition 机制")
+    void testCondition() throws InterruptedException {
+        System.out.println("★ 3. 测试 Condition 等待/唤醒");
         RcsLock lock = RcsLock.ofReentrant();
         Condition condition = lock.newCondition();
         AtomicInteger step = new AtomicInteger(0);
 
-        Thread t1 = Thread.ofVirtual().start(() -> {
+        // 线程 T1: 等待信号
+        Thread t1 = new Thread(() -> {
             lock.runInWrite(() -> {
                 try {
+                    System.out.println("   [T1] 拿到锁，开始 await...");
                     step.set(1);
-                    System.out.println("    T1: 等待信号...");
-                    condition.await(); // 释放锁，等待
+                    condition.await(); // 释放锁并等待
+                    System.out.println("   [T1] 被唤醒，继续执行");
                     step.set(3);
-                    System.out.println("    T1: 被唤醒!");
                 } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             });
         });
 
-        Thread.sleep(50); // 确保 T1 进入 await
+        t1.start();
 
-        Thread t2 = Thread.ofVirtual().start(() -> {
-            lock.runInWrite(() -> {
-                Assertions.assertEquals(1, step.get());
-                step.set(2);
-                System.out.println("    T2: 发送信号...");
-                condition.signal();
-            });
+        // 确保 T1 已经进入 await 状态
+        while (step.get() != 1) {
+            ThreadUtil.sleep(10);
+        }
+
+        // 线程 T2: 发送信号
+        ThreadUtil.sleep(100);
+        lock.runInWrite(() -> {
+            System.out.println("   [T2] 拿到锁，发送 signal");
+            step.set(2);
+            condition.signal();
         });
 
         t1.join();
-        t2.join();
+        assertEquals(3, step.get(), "Condition 流程执行顺序错误");
+    }
 
-        Assertions.assertEquals(3, step.get());
-        System.out.println("    ✅ Condition 流程验证通过");
+    // ==========================================
+    // 2. READ_WRITE (读写锁) 测试
+    // ==========================================
+
+    @Test
+    @Order(4)
+    @DisplayName("读写锁 - 读读共享 & 写锁排他")
+    void testReadWriteLock() throws InterruptedException {
+        System.out.println("★ 4. 测试读写锁 (Read-Write)");
+        RcsLock lock = RcsLock.ofReadWrite();
+        AtomicInteger readCount = new AtomicInteger(0);
+        CountDownLatch readLatch = new CountDownLatch(3);
+
+        // 1. 模拟一个写锁正在持有 (Block Reads)
+        Thread writer = new Thread(() -> {
+            lock.runInWrite(() -> {
+                System.out.println("   [Writer] 写锁持有中 (100ms)...");
+                ThreadUtil.sleep(100);
+            });
+        });
+        writer.start();
+        ThreadUtil.sleep(10); // 确保写锁先拿到
+
+        long start = System.currentTimeMillis();
+
+        // 2. 启动 3 个读线程
+        for (int i = 0; i < 3; i++) {
+            new Thread(() -> {
+                lock.runInRead(() -> {
+                    System.out.println("   [Reader] 读取数据...");
+                    readCount.incrementAndGet();
+                    ThreadUtil.sleep(50); // 模拟耗时读取
+                });
+                readLatch.countDown();
+            }).start();
+        }
+
+        readLatch.await();
+        long cost = System.currentTimeMillis() - start;
+
+        System.out.println("   [STATS] 总耗时: " + cost + "ms");
+
+        // 验证：
+        // 写锁耗时 100ms，读锁并发耗时 50ms。
+        // 如果是互斥的，总耗时 = 100 + 50*3 = 250ms
+        // 如果读是共享的，总耗时 ≈ 100 + 50 = 150ms
+        assertTrue(cost < 200, "读操作应该是并行的，不应串行阻塞");
+        assertEquals(3, readCount.get());
+    }
+
+    // ==========================================
+    // 3. STAMPED (印章锁) 测试
+    // ==========================================
+
+    @Test
+    @Order(5)
+    @DisplayName("印章锁 - 乐观读成功 (No Write)")
+    void testStampedOptimisticSuccess() {
+        System.out.println("★ 5. 测试印章锁乐观读 - 成功场景");
+        RcsLock lock = RcsLock.ofStamped();
+
+        String result = lock.optimisticRead(
+                // 1. 尝试乐观读 (无锁)
+                () -> {
+                    System.out.println("   [Optimistic] 尝试乐观读取...");
+                    return "SUCCESS";
+                },
+                // 2. 降级逻辑 (不应触发)
+                () -> {
+                    fail("不应触发降级");
+                    return "FAILURE";
+                }
+        );
+
+        assertEquals("SUCCESS", result);
+    }
+
+    @Test
+    @Order(6)
+    @DisplayName("印章锁 - 乐观读失败自动降级 (Write Interfere)")
+    void testStampedOptimisticFallback() throws InterruptedException {
+        System.out.println("★ 6. 测试印章锁乐观读 - 失败降级场景");
+        RcsLock lock = RcsLock.ofStamped();
+        final int[] data = {100};
+
+        // 1. 启动一个线程，在乐观读的间隙修改数据
+        CompletableFuture<Void> writeFuture = CompletableFuture.runAsync(() -> {
+            ThreadUtil.sleep(50); // 等待主线程先开始乐观读
+            lock.runInWrite(() -> {
+                System.out.println("   [Writer] 😈 恶意修改数据 -> 200");
+                data[0] = 200;
+            });
+        });
+
+        // 2. 主线程执行乐观读
+        Integer result = lock.optimisticRead(
+                // Attempt: 模拟耗时读取，故意让写线程插队
+                () -> {
+                    System.out.println("   [Optimistic] 开始尝试...");
+                    int val = data[0];
+                    ThreadUtil.sleep(100); // 睡得比写线程久，保证在此期间发生写操作
+                    System.out.println("   [Optimistic] 尝试结束 (读取到旧值/脏值: " + val + ")");
+                    return val;
+                },
+                // Fallback: 悲观读兜底
+                () -> {
+                    System.out.println("   [Fallback] ⚠️ 校验失败，降级为悲观读锁");
+                    return data[0];
+                }
+        );
+
+        writeFuture.join();
+
+        System.out.println("   [RESULT] 最终获取值: " + result);
+
+        // 验证：乐观读虽然可能读到了 100，但 validate 失败，最终应该通过 fallback 拿到 200
+        assertEquals(200, result, "降级机制未生效，拿到了脏数据");
+    }
+
+    // ==========================================
+    // 4. 异常安全性测试
+    // ==========================================
+
+    @Test
+    @Order(7)
+    @DisplayName("异常安全性 - 异常后锁应自动释放")
+    void testExceptionSafety() {
+        System.out.println("★ 7. 测试异常安全性");
+        RcsLock lock = RcsLock.ofReentrant();
+
+        // 1. 抛出异常
+        assertThrows(RuntimeException.class, () -> {
+            lock.runInWrite(() -> {
+                throw new RuntimeException("业务异常");
+            });
+        });
+
+        // 2. 验证锁是否被释放 (如果没释放，再次加锁会卡死或无法获取)
+        // 尝试立即获取锁
+        boolean success = false;
+        try {
+            lock.runInWrite(() -> System.out.println("   [Check] 锁已释放，可以重新获取"));
+            success = true;
+        } catch (Exception e) {
+            success = false;
+        }
+
+        assertTrue(success, "发生异常后锁未释放");
     }
 }

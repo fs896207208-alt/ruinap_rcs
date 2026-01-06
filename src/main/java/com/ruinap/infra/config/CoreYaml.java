@@ -70,6 +70,9 @@ public class CoreYaml implements ReloadableConfig {
      */
     public String getDevelop() {
         CoreConfig current = config;
+        if (current == null || current.getRcsSys() == null) {
+            return "false";
+        }
         return current.getRcsSys().getOrDefault("develop", "false");
     }
 
@@ -80,6 +83,9 @@ public class CoreYaml implements ReloadableConfig {
      */
     public String getEnableArthas() {
         CoreConfig current = config;
+        if (current == null || current.getRcsSys() == null) {
+            return "true";
+        }
         return current.getRcsSys().getOrDefault("enable_arthas", "true");
     }
 
@@ -90,6 +96,9 @@ public class CoreYaml implements ReloadableConfig {
      */
     public String getNettyFutureTimeout() {
         CoreConfig current = config;
+        if (current == null || current.getRcsSys() == null) {
+            return "3";
+        }
         return current.getRcsSys().getOrDefault("netty_future_timeout", "3");
     }
 
@@ -100,8 +109,14 @@ public class CoreYaml implements ReloadableConfig {
      */
     public LinkedHashMap<String, LinkedHashMap<String, String>> getTimerCommon() {
         CoreConfig current = config;
+        if (current == null) {
+            return new LinkedHashMap<>(0);
+        }
         LinkedHashMap<String, LinkedHashMap<String, String>> timerCommon = current.getRcsTimer();
-        return timerCommon.isEmpty() ? new LinkedHashMap<>(0) : timerCommon;
+        if (timerCommon == null || timerCommon.isEmpty()) {
+            return new LinkedHashMap<>(0);
+        }
+        return timerCommon;
     }
 
     /**
@@ -113,6 +128,9 @@ public class CoreYaml implements ReloadableConfig {
      */
     public Integer getWebPort() {
         CoreConfig current = config;
+        if (current == null || current.getRcsPort() == null) {
+            return 9090;
+        }
         return current.getRcsPort().getOrDefault("web_port", 9090);
     }
 
@@ -125,6 +143,9 @@ public class CoreYaml implements ReloadableConfig {
      */
     public Integer getNettyWebsocketPort() {
         CoreConfig current = config;
+        if (current == null || current.getRcsPort() == null) {
+            return 9091;
+        }
         return current.getRcsPort().getOrDefault("netty_websocket_port", 9091);
     }
 
@@ -137,6 +158,9 @@ public class CoreYaml implements ReloadableConfig {
      */
     public Integer getNettyMqttPort() {
         CoreConfig current = config;
+        if (current == null || current.getRcsPort() == null) {
+            return 9092;
+        }
         return current.getRcsPort().getOrDefault("netty_mqtt_port", 9092);
     }
 
@@ -146,11 +170,12 @@ public class CoreYaml implements ReloadableConfig {
      * @return 线程池核心线程数
      */
     public Integer getAlgoCorePoolSize() {
-        if (config == null || config.getRcsThreadPool() == null) {
+        CoreConfig current = config;
+        if (current == null || current.getRcsThreadPool() == null) {
             // 默认兜底：CPU核数 + 1
             return Runtime.getRuntime().availableProcessors() + 1;
         }
-        return config.getRcsThreadPool().getOrDefault("core_pool_size", Runtime.getRuntime().availableProcessors() + 1);
+        return current.getRcsThreadPool().getOrDefault("core_pool_size", Runtime.getRuntime().availableProcessors() + 1);
     }
 
     /**
@@ -159,10 +184,11 @@ public class CoreYaml implements ReloadableConfig {
      * @return 线程池最大线程数
      */
     public Integer getAlgoMaxPoolSize() {
-        if (config == null || config.getRcsThreadPool() == null) {
+        CoreConfig current = config;
+        if (current == null || current.getRcsThreadPool() == null) {
             return Runtime.getRuntime().availableProcessors() + 1;
         }
-        return config.getRcsThreadPool().getOrDefault("max_pool_size", Runtime.getRuntime().availableProcessors() + 1);
+        return current.getRcsThreadPool().getOrDefault("max_pool_size", Runtime.getRuntime().availableProcessors() + 1);
     }
 
     /**
@@ -171,10 +197,11 @@ public class CoreYaml implements ReloadableConfig {
      * @return 线程池队列大小
      */
     public Integer getAlgoQueueCapacity() {
-        if (config == null || config.getRcsThreadPool() == null) {
+        CoreConfig current = config;
+        if (current == null || current.getRcsThreadPool() == null) {
             return 2048;
         }
-        return config.getRcsThreadPool().getOrDefault("queue_capacity", 2048);
+        return current.getRcsThreadPool().getOrDefault("queue_capacity", 2048);
     }
 
     /**
@@ -183,10 +210,11 @@ public class CoreYaml implements ReloadableConfig {
      * @return 线程池空闲线程存活时间
      */
     public Integer getAlgoKeepAliveSeconds() {
-        if (config == null || config.getRcsThreadPool() == null) {
+        CoreConfig current = config;
+        if (current == null || current.getRcsThreadPool() == null) {
             return 60;
         }
-        return config.getRcsThreadPool().getOrDefault("keep_alive_seconds", 60);
+        return current.getRcsThreadPool().getOrDefault("keep_alive_seconds", 60);
     }
 
     /**
@@ -196,7 +224,13 @@ public class CoreYaml implements ReloadableConfig {
      */
     public Map<String, Integer> getAlgorithmCommon() {
         CoreConfig current = config;
+        if (current == null) {
+            return new HashMap<>(0);
+        }
         Map<String, Integer> algorithmCommon = current.getAlgorithmCommon();
-        return algorithmCommon.isEmpty() ? new HashMap<>() : algorithmCommon;
+        if (algorithmCommon == null || algorithmCommon.isEmpty()) {
+            return new HashMap<>(0);
+        }
+        return algorithmCommon;
     }
 }

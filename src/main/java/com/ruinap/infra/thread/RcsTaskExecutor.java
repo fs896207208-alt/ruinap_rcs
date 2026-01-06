@@ -53,38 +53,56 @@ public class RcsTaskExecutor {
      *
      * @param tasks    任务列表
      * @param deadline 截止时间
-     * @return 结果列表
+     * @return 结果列表（按传入顺序排序）
      */
     public <T> List<T> executeAllOrThrow(List<Callable<T>> tasks, Instant deadline) throws ExecutionException, InterruptedException, TimeoutException {
-        // ... 原有逻辑不变 ...
-        // 1. 提交所有任务到全局线程池
-        List<Future<T>> futures = new ArrayList<>(tasks.size());
+        int size = tasks.size();
+        // 使用 CompletionService 来监听 "谁先结束"
+        ExecutorCompletionService<T> completionService = new ExecutorCompletionService<>(vthreadPool.getExecutor());
+        List<Future<T>> futures = new ArrayList<>(size);
+
+        // 1. 提交所有任务
         for (Callable<T> task : tasks) {
-            futures.add(vthreadPool.submit(task));
+            // 注意：这里必须用 completionService.submit，这样结果才会进入内部队列
+            futures.add(completionService.submit(task));
         }
 
-        List<T> results = new ArrayList<>(tasks.size());
-
-        // 2. 遍历等待结果
         try {
-            for (Future<T> future : futures) {
-                // 计算动态剩余超时时间
-                long timeoutMs = (deadline != null) ?
+            // 2. 按完成顺序获取结果 (这里是 Fail-Fast 的关键)
+            // 我们不关心谁是 taskA 谁是 taskB，我们只关心"下一个完成的任务"
+            for (int i = 0; i < size; i++) {
+                long timeLeft = (deadline != null) ?
                         Math.max(0, deadline.toEpochMilli() - System.currentTimeMillis()) : Long.MAX_VALUE;
 
-                // 获取结果 (如果此任务失败，抛出异常进入 catch)
-                results.add(future.get(timeoutMs, TimeUnit.MILLISECONDS));
+                // poll 会获取"最早完成"的那个任务（无论是成功还是异常）
+                Future<T> doneFuture = completionService.poll(timeLeft, TimeUnit.MILLISECONDS);
+                if (doneFuture == null) {
+                    throw new TimeoutException("任务整体等待超时");
+                }
+
+                // 立即检查结果。如果该任务抛出了异常，get() 会立刻抛出 ExecutionException，进入 catch 块
+                doneFuture.get();
+            }
+
+            // 3. 如果能走到这里，说明 loop 跑完没有任何异常，所有任务都成功了。
+            // 现在按原始顺序收集结果返回
+            List<T> results = new ArrayList<>(size);
+            for (Future<T> future : futures) {
+                // 此时 future 肯定已完成且无异常
+                results.add(future.get());
             }
             return results;
+
         } catch (Exception e) {
-            // 【关键】一旦发生异常，立即遍历所有 Future，取消那些还在运行的任务
+            // 【熔断机制】一旦捕捉到任何异常（包括 ExecutionException）
+            // 立即遍历所有 Future，取消那些还在运行的任务
             for (Future<T> f : futures) {
                 if (!f.isDone()) {
-                    // 向虚拟线程发送中断信号
+                    // 发送中断信号，让还在跑的慢任务停下来
                     f.cancel(true);
                 }
             }
-            // 重新抛出异常给上层
+            // 将异常抛给上层
             throw e;
         }
     }

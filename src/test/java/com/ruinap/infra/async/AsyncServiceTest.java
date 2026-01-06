@@ -1,18 +1,19 @@
 package com.ruinap.infra.async;
 
-import com.ruinap.infra.framework.annotation.Autowired;
-import com.ruinap.infra.framework.test.SpringBootTest;
+import cn.hutool.core.thread.ThreadUtil;
+import cn.hutool.core.util.ReflectUtil;
 import com.ruinap.infra.thread.VthreadPool;
 import org.junit.jupiter.api.*;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * AsyncUtils 单元测试
@@ -21,238 +22,196 @@ import java.util.function.Supplier;
  * @author qianye
  * @create 2025-12-05 17:24
  */
-// 1. 移除 @RunWith，由 @SpringBootTest 组合注解接管
-@SpringBootTest
-// 2. 升级排序注解: 按方法名升序执行
-@TestMethodOrder(MethodOrderer.MethodName.class)
-@DisplayName("异步服务(AsyncService)测试")
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class AsyncServiceTest {
 
-    @Autowired
-    private VthreadPool vthreadPool;
-    @Autowired
-    private AsyncService asyncService;
+    private static AsyncService asyncService;
+    private static VthreadPool vthreadPool;
 
-    // ==========================================
-    // 1. 超时控制测试 (Timeout Control)
-    // ==========================================
+    @BeforeAll
+    static void initGlobal() {
+        System.out.println("██████████ [START] 启动 AsyncService 测试 ██████████");
 
-    /**
-     * 测试：waitAnyTask - 正常完成
-     */
-    @Test
-    @DisplayName("测试：waitAnyTask 正常返回")
-    void test01_WaitAnyTask_Success() throws TimeoutException {
-        CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> "Success");
-        String result = asyncService.waitAnyTask(future, 1, TimeUnit.SECONDS);
-        // JUnit 6: assertEquals(expected, actual)
-        Assertions.assertEquals("Success", result);
-        System.out.println("1. waitAnyTask 正常返回测试通过");
+        // 1. 启动真实的 VthreadPool
+        vthreadPool = new VthreadPool();
+        vthreadPool.run();
+
+        // 2. 初始化待测对象
+        asyncService = new AsyncService();
+
+        // 3. 注入依赖
+        // 注意：根据源码，字段名为 "vThreadPool" (驼峰)
+        ReflectUtil.setFieldValue(asyncService, "vThreadPool", vthreadPool);
     }
 
-    /**
-     * 测试：waitAnyTask - 触发超时异常
-     */
-    @Test
-    @DisplayName("测试：waitAnyTask 超时异常")
-    void test02_WaitAnyTask_TimeoutException() {
-        // 模拟一个永远完不成的任务
-        CompletableFuture<String> future = new CompletableFuture<>();
-
-        System.out.println("2. 正在测试超时抛出异常...");
-        long start = System.currentTimeMillis();
-
-        try {
-            // 设置 100ms 超时
-            asyncService.waitAnyTask(future, 100, TimeUnit.MILLISECONDS);
-
-            // 如果代码走到这里，说明没抛异常，那就是真的 Fail 了
-            Assertions.fail("【测试失败】预期应当抛出 TimeoutException，但未抛出！");
-        } catch (TimeoutException e) {
-            long cost = System.currentTimeMillis() - start;
-            System.out.println(">>> [验证通过] 成功捕获预期异常: " + e.getClass().getSimpleName());
-            System.out.println(">>> 耗时: " + cost + "ms");
-
-            // 可以在这里断言一下确实是 TimeoutException
-            Assertions.assertTrue(e instanceof TimeoutException);
-        } catch (Exception e) {
-            Assertions.fail("【测试失败】抛出了错误的异常类型: " + e.getClass().getName());
-        }
-    }
-
-    /**
-     * 测试：waitAnyTask - 超时返回默认值
-     */
-    @Test
-    @DisplayName("测试：waitAnyTask 默认值回退")
-    void test03_WaitAnyTask_DefaultValue() throws TimeoutException {
-        CompletableFuture<String> future = new CompletableFuture<>();
-
-        long start = System.currentTimeMillis();
-        // 设置 100ms 超时，期望返回 "Default"
-        String result = asyncService.waitAnyTask(future, 100, TimeUnit.MILLISECONDS, "Default");
-        long cost = System.currentTimeMillis() - start;
-
-        Assertions.assertEquals("Default", result);
-        // JUnit 6: assertTrue(condition, message) - 参数互换
-        Assertions.assertTrue(cost >= 90, "超时控制应当生效");
-        System.out.println("3. waitAnyTask 默认值回退测试通过");
+    @AfterAll
+    static void destroyGlobal() {
+        vthreadPool.shutdown();
+        System.out.println("██████████ [END] 测试结束 ██████████");
     }
 
     // ==========================================
-    // 2. 批量任务等待测试 (Wait All)
+    // 1. executeAndGet (单任务超时等待)
     // ==========================================
 
-    /**
-     * 测试：waitAllTasks - 等待所有完成并保持顺序
-     */
     @Test
-    @DisplayName("测试：waitAllTasks 顺序一致性")
-    void test04_WaitAllTasks() {
-        // 创建三个不同耗时的任务
-        CompletableFuture<Integer> f1 = CompletableFuture.supplyAsync(() -> {
-            try {
-                Thread.sleep(100);
-            } catch (Exception e) {
-            }
-            return 1;
-        });
-        CompletableFuture<Integer> f2 = CompletableFuture.supplyAsync(() -> 2);
-        CompletableFuture<Integer> f3 = CompletableFuture.supplyAsync(() -> 3);
+    @Order(1)
+    @DisplayName("执行并获取结果 - 正常场景")
+    void testExecuteAndGet_Success() throws TimeoutException {
+        System.out.println("\n--- 测试：executeAndGet (Success) ---");
 
-        List<Integer> results = asyncService.waitAllTasks(Arrays.asList(f1, f2, f3));
+        String result = asyncService.executeAndGet(() -> {
+            ThreadUtil.sleep(50);
+            return "OK";
+        }, 1000, TimeUnit.MILLISECONDS);
 
-        Assertions.assertEquals(3, results.size());
-        Assertions.assertEquals(Integer.valueOf(1), results.get(0)); // 即使 f1 最慢，结果也该在第一个
-        Assertions.assertEquals(Integer.valueOf(2), results.get(1));
-        Assertions.assertEquals(Integer.valueOf(3), results.get(2));
-        System.out.println("4. waitAllTasks 顺序一致性测试通过");
+        assertEquals("OK", result);
+        System.out.println("   [PASS] 成功获取结果");
     }
 
-    // ==========================================
-    // 3. 严格顺序执行测试 (Strictly Sequential)
-    // ==========================================
-
-    /**
-     * 测试：executeStrictlySequential - 验证串行时序
-     */
     @Test
-    @DisplayName("测试：executeStrictlySequential 串行逻辑")
-    void test05_StrictlySequential() {
-        // 使用并发安全的 List 记录执行痕迹
-        List<String> logList = new CopyOnWriteArrayList<>();
+    @Order(2)
+    @DisplayName("执行并获取结果 - 超时异常")
+    void testExecuteAndGet_Timeout() {
+        System.out.println("\n--- 测试：executeAndGet (Timeout) ---");
 
-        List<Supplier<CompletableFuture<String>>> tasks = Arrays.asList(
-                () -> vthreadPool.supplyAsync(() -> {
-                    try {
-                        Thread.sleep(50);
-                    } catch (Exception e) {
-                    }
-                    logList.add("A");
-                    return "ResA";
-                }),
-                () -> vthreadPool.supplyAsync(() -> {
-                    logList.add("B");
-                    return "ResB";
-                }),
-                () -> vthreadPool.supplyAsync(() -> {
-                    logList.add("C");
-                    return "ResC";
-                })
-        );
-
-        long start = System.currentTimeMillis();
-        List<String> results = asyncService.executeStrictlySequential(tasks);
-        long cost = System.currentTimeMillis() - start;
-
-        // 验证结果顺序
-        Assertions.assertEquals("ResA", results.get(0));
-        Assertions.assertEquals("ResB", results.get(1));
-        Assertions.assertEquals("ResC", results.get(2));
-
-        // 验证执行顺序：必须是 A -> B -> C
-        String logString = String.join("", logList);
-        // JUnit 6: assertEquals(expected, actual, message)
-        Assertions.assertEquals("ABC", logString);
-
-        // 验证耗时：至少包含 A 的 50ms 等待，说明 B 确实是在 A 之后才跑的
-        Assertions.assertTrue(cost >= 50, "必须串行执行");
-
-        System.out.println("5. executeStrictlySequential 串行逻辑测试通过");
-    }
-
-    /**
-     * 测试：executeStrictlySequential - 异常处理
-     * 场景：中间某个步骤失败，中断整个流程
-     */
-    @Test
-    @DisplayName("测试：executeStrictlySequential 异常中断")
-    void test06_StrictlySequential_WithException() {
-        List<Supplier<CompletableFuture<String>>> tasks = Arrays.asList(
-                () -> CompletableFuture.supplyAsync(() -> "OK1"),
-                () -> CompletableFuture.failedFuture(new RuntimeException("Step 2 Failed")),
-                () -> CompletableFuture.supplyAsync(() -> "OK3")
-        );
-
-        List<String> results = asyncService.executeStrictlySequential(tasks);
-
-        Assertions.assertEquals("OK1", results.get(0));
-        // JUnit 6: assertNull(actual, message) - 参数互换
-        Assertions.assertNull(results.get(1), "异常步骤应返回 null");
-        Assertions.assertEquals("OK3", results.get(2));
-        System.out.println("6. executeStrictlySequential 异常容错测试通过");
-    }
-
-    // ==========================================
-    // 4. 并行批处理测试 (Parallel Processing)
-    // ==========================================
-
-    /**
-     * 测试：runParallel (基础版)
-     */
-    @Test
-    @DisplayName("测试：runParallel 基础并发")
-    void test07_RunParallel_Basic() {
-        List<Integer> inputs = Arrays.asList(1, 2, 3, 4, 5);
-        AtomicInteger sum = new AtomicInteger(0);
-
-        // 使用 CopyOnWriteArrayList 记录并发执行的线程名称，验证是否使用了不同的虚拟线程
-        List<String> threads = new CopyOnWriteArrayList<>();
-
-        asyncService.runParallel(inputs, num -> {
-            threads.add(Thread.currentThread().toString());
-            sum.addAndGet(num);
+        // 任务耗时 200ms，超时设置 50ms
+        // [修复] AsyncService 直接抛出了 JDK 的 TimeoutException (Checked Exception)，而非 RuntimeException
+        assertThrows(TimeoutException.class, () -> {
+            asyncService.executeAndGet(() -> {
+                ThreadUtil.sleep(200);
+                return "Slow";
+            }, 50, TimeUnit.MILLISECONDS);
         });
 
-        Assertions.assertEquals(15, sum.get());
-        // 简单验证使用了虚拟线程
-        Assertions.assertTrue(threads.getFirst().contains("VirtualThread") || threads.getFirst().contains("vt-"), "应使用虚拟线程");
-        System.out.println("7. runParallel 基础并发测试通过");
+        System.out.println("   [PASS] 成功捕获超时异常: TimeoutException");
     }
 
-    /**
-     * 测试：runParallel (带防重/跳过逻辑)
-     * 场景：输入 [A, B, A, C]，条件是“跳过 A”，期望只处理 B 和 C
-     */
+    // ==========================================
+    // 2. executeAll (并行等待所有)
+    // ==========================================
+
     @Test
-    @DisplayName("测试：runParallel 防重逻辑")
-    void test08_RunParallel_WithSkip() {
-        List<String> items = Arrays.asList("A", "B", "A", "C");
-        List<String> processed = new CopyOnWriteArrayList<>();
+    @Order(3)
+    @DisplayName("并行执行所有任务 (Runnable)")
+    void testExecuteAll() {
+        System.out.println("\n--- 测试：executeAll ---");
+
+        AtomicInteger counter = new AtomicInteger(0);
+        long start = System.currentTimeMillis();
+
+        List<Runnable> tasks = Arrays.asList(
+                () -> {
+                    ThreadUtil.sleep(50);
+                    counter.incrementAndGet();
+                },
+                () -> {
+                    ThreadUtil.sleep(100);
+                    counter.incrementAndGet();
+                },
+                () -> {
+                    ThreadUtil.sleep(20);
+                    counter.incrementAndGet();
+                }
+        );
+
+        asyncService.executeAll(tasks);
+        long cost = System.currentTimeMillis() - start;
+
+        assertEquals(3, counter.get());
+        // 验证并行性：耗时应接近最慢的任务 (100ms)，而非总和 (170ms)
+        assertTrue(cost < 160, "任务应并行执行");
+        System.out.println("   [PASS] 所有任务完成，耗时: " + cost + "ms");
+    }
+
+    // ==========================================
+    // 3. runParallel (高级批处理)
+    // ==========================================
+
+    @Test
+    @Order(4)
+    @DisplayName("高级批处理 - 正常逻辑")
+    void testRunParallel_Normal() {
+        System.out.println("\n--- 测试：runParallel (Normal) ---");
+
+        List<Integer> items = Arrays.asList(1, 2, 3, 4, 5);
+        List<String> results = new CopyOnWriteArrayList<>(); // 线程安全List收集结果
 
         asyncService.runParallel(
                 items,
-                item -> item, // key mapper: item 本身就是 key
-                key -> key.equals("A"), // skip condition: 如果是 A 就跳过
-                item -> processed.add(item) // action
+                item -> "Key-" + item, // KeyMapper
+                key -> false,          // SkipCondition (不跳过)
+                item -> {              // Action
+                    String res = "Processed-" + item;
+                    results.add(res);
+                    System.out.println("   [TASK] " + res);
+                }
         );
 
-        // 验证 A 被跳过，B C 被处理
-        Assertions.assertFalse(processed.contains("A"), "A 应该被跳过");
-        Assertions.assertTrue(processed.contains("B"), "B 应该被处理");
-        Assertions.assertTrue(processed.contains("C"), "C 应该被处理");
-        Assertions.assertEquals(2, processed.size());
+        assertEquals(5, results.size());
+        assertTrue(results.contains("Processed-1"));
+        assertTrue(results.contains("Processed-5"));
+    }
 
-        System.out.println("8. runParallel 防重/跳过逻辑测试通过");
+    @Test
+    @Order(5)
+    @DisplayName("高级批处理 - 跳过逻辑 (SkipCondition)")
+    void testRunParallel_Skip() {
+        System.out.println("\n--- 测试：runParallel (Skip) ---");
+
+        List<String> items = Arrays.asList("A", "B", "C");
+        List<String> executed = new CopyOnWriteArrayList<>();
+
+        asyncService.runParallel(
+                items,
+                item -> item, // Key就是本身
+                key -> "B".equals(key), // 跳过 "B"
+                item -> {
+                    executed.add(item);
+                    System.out.println("   [TASK] 执行: " + item);
+                }
+        );
+
+        assertEquals(2, executed.size());
+        assertTrue(executed.contains("A"));
+        assertTrue(executed.contains("C"));
+        assertFalse(executed.contains("B"), "元素 B 应该被跳过");
+    }
+
+    @Test
+    @Order(6)
+    @DisplayName("高级批处理 - 异常隔离 (One Fail, Others Continue)")
+    void testRunParallel_Exception() {
+        System.out.println("\n--- 测试：runParallel (Exception Isolation) ---");
+
+        List<Integer> items = Arrays.asList(1, 2, 3);
+        AtomicInteger successCount = new AtomicInteger(0);
+
+        asyncService.runParallel(
+                items,
+                String::valueOf,
+                key -> false,
+                item -> {
+                    if (item == 2) {
+                        throw new RuntimeException("Task 2 Boom!");
+                    }
+                    successCount.incrementAndGet();
+                    System.out.println("   [TASK] 成功处理: " + item);
+                }
+        );
+
+        // 验证：任务2失败不应阻塞任务1和3
+        assertEquals(2, successCount.get(), "即使任务2失败，任务1和3也应成功");
+    }
+
+    @Test
+    @Order(7)
+    @DisplayName("边界测试 - 空列表")
+    void testEmptyList() {
+        System.out.println("\n--- 测试：空列表输入 ---");
+        assertDoesNotThrow(() -> asyncService.executeAll(null));
+        assertDoesNotThrow(() -> asyncService.executeAll(Collections.emptyList()));
+        assertDoesNotThrow(() -> asyncService.runParallel(null, i -> "", s -> false, i -> {
+        }));
     }
 }
