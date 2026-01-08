@@ -18,8 +18,7 @@ public class MapKeyUtil {
     /**
      * 生成点位组合键 (压缩为 long)
      * <p>
-     * 适用于内部核心算法（A*搜索、死锁检测）。
-     * 注意：若对接 VDA5050，需在协议适配层维护 String nodeId 到此 int pointId 的映射。
+     * 获取 MapSnapshot 的 pointKeyToGraphId、pointMap、occupys
      * </p>
      *
      * @param mapId   地图ID

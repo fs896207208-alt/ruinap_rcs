@@ -148,6 +148,17 @@ public class RcsPointOccupy implements Serializable {
     }
 
     /**
+     * 判断当前点位是否被指定设备占用
+     *
+     * @param deviceCode 设备编号
+     * @return true=被占用 false=未占用
+     */
+    public boolean getDeviceOccupyState(String deviceCode) {
+        Set<PointOccupyTypeEnum> types = occupants.get(deviceCode);
+        return types != null && !types.isEmpty();
+    }
+
+    /**
      * 获取指定设备的占用类型集合
      *
      * @param deviceCode 设备编号

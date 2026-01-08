@@ -114,6 +114,10 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
 
     /**
      * 检查点位是否被占用
+     *
+     * @param mapId   地图编号
+     * @param pointId 点位编号
+     * @return true=点位被占用; false=点位未被占用
      */
     public boolean getPointOccupyState(Integer mapId, Integer pointId) {
         boolean occupied = false;

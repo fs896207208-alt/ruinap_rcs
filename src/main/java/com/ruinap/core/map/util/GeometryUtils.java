@@ -134,10 +134,24 @@ public class GeometryUtils {
         return (int) Math.round(Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2)));
     }
 
+    /**
+     * 计算两点欧氏距离 (纯 CPU 计算)
+     * [Perf] 极致性能优化：
+     * 1. 避免了任何对象创建 (No Allocation)。
+     * 2. Math.sqrt 和 Math.pow 会被 JIT 编译为 CPU 原语指令 (Intrinsic)，纳秒级响应。
+     */
     public static int calculateDistance(RcsPoint p1, RcsPoint p2) {
         return calculateDistance(p1.getX(), p1.getY(), p2.getX(), p2.getY());
     }
 
+    /**
+     * 计算两点成本
+     *
+     * @param current 当前点
+     * @param next    下一点
+     * @param target  目标对象
+     * @return 成本
+     */
     public static int calculateCost(RcsPoint current, RcsPoint next, RcsPointTarget target) {
         if (current.equals(next)) {
             return 0;
