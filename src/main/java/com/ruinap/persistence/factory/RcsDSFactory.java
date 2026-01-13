@@ -1,4 +1,4 @@
-package com.ruinap.persistence.datasource;
+package com.ruinap.persistence.factory;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;

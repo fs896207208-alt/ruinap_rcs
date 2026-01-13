@@ -106,7 +106,7 @@ public class MapManagerConcurrentTest {
 
             // 【关键】必须 New 真实的 RcsPointOccupy，因为锁逻辑在它里面
             // 假设 RcsPointOccupy 内部使用了 RcsLock (ReentrantLock)
-            occupys.put(key, new RcsPointOccupy(pid));
+            occupys.put(key, new RcsPointOccupy(key, pid));
         }
 
         return MapSnapshot.builder()

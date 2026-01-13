@@ -96,7 +96,7 @@ class MapManagerTest {
             graph.setVertexLabel(i, p);
 
             // 模拟 MapLoader 生产初始状态
-            occupys.put(key, new RcsPointOccupy(pid));
+            occupys.put(key, new RcsPointOccupy(key, pid));
         }
 
         // 2. 使用 Builder 构建 Record 对象

@@ -1,0 +1,24 @@
+package com.ruinap.adapter.communicate.server.handler;
+
+import com.slamopto.communicate.base.ServerAttribute;
+import com.slamopto.communicate.base.handler.IBaseServerHandler;
+import io.netty.channel.ChannelHandlerContext;
+
+/**
+ * 服务端处理接口
+ *
+ * @author qianye
+ * @create 2025-04-29 15:14
+ */
+public interface IServerHandler extends IBaseServerHandler {
+
+    /**
+     * 触发时机：当 Handler 从 ChannelPipeline 中移除时调用
+     * 用途：清理 Handler 级别的资源
+     * <p>
+     * 当关闭连接时，第三个调用handlerRemoved
+     *
+     * @param ctx 上下文
+     */
+    void handlerRemoved(ChannelHandlerContext ctx, ServerAttribute attribute);
+}

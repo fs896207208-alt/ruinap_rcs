@@ -3,7 +3,7 @@ package com.ruinap.persistence.repository;
 import cn.hutool.db.Entity;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Service;
-import com.ruinap.persistence.datasource.RcsDSFactory;
+import com.ruinap.persistence.factory.RcsDSFactory;
 
 import java.sql.SQLException;
 import java.util.List;

@@ -174,7 +174,7 @@ public class MapLoader {
             pointKeyToGraphId.put(key, globalGraphIndex);
 
             // 3.2 初始化点位占用对象
-            occupys.put(key, new RcsPointOccupy(p.getId()));
+            occupys.put(key, new RcsPointOccupy(key, p.getId()));
 
             // 3.3 【关键】反向注入：将算法ID埋入对象内部
             // 这样以后拿到对象，p.getGraphIndex() 瞬间就能知道它在图里的位置

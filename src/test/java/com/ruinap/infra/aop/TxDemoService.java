@@ -4,7 +4,7 @@ import cn.hutool.db.Entity;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Service;
 import com.ruinap.infra.framework.annotation.Transactional;
-import com.ruinap.persistence.datasource.RcsDSFactory;
+import com.ruinap.persistence.factory.RcsDSFactory;
 import com.ruinap.persistence.repository.BaseDao;
 
 import java.sql.SQLException;

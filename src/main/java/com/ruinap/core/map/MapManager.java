@@ -21,6 +21,7 @@ import org.graph4j.Edge;
 import org.graph4j.NeighborIterator;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -46,6 +47,13 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
      */
     @Getter
     private volatile MapSnapshot snapshot = MapSnapshot.empty();
+    /**
+     * 设备占用索引
+     * Key: deviceCode
+     * Value: RcsPointOccupy
+     */
+    private final Map<String, Set<RcsPointOccupy>> deviceOccupyIndex = new ConcurrentHashMap<>();
+
     /**
      * 热更新互斥锁，防止多个配置变更事件同时触发重载
      */
@@ -101,6 +109,27 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
     }
 
     /**
+     * 获取点位占用对象
+     * <p>不存在的点位直接返回 null</p>
+     *
+     * @param key 点位 Key
+     * @return 状态对象 或 null
+     */
+    public RcsPointOccupy getPointOccupy(Long key) {
+        if (key == null) {
+            return null;
+        }
+        // 捕获当前引用的快照 (局部变量)
+        MapSnapshot localSnap = this.snapshot;
+        if (localSnap == null) {
+            return null;
+        }
+        // 既然 loadInternal 保证了集合完整性，这里直接 get 即可
+        // 甚至不需要查 snapshot.getGraphId 做前置校验，因为 occupyMap 的 Key 集合是 snapshot 的子集(或超集)
+        return localSnap.occupys().get(key);
+    }
+
+    /**
      * 获取地图的点位占用对象
      * <p>
      * 本方法通过点ID从有向权重图缓存中检索对应的点位占用信息。此方法用于快速访问已知ID的点位
@@ -145,7 +174,12 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
             return false;
         }
         // 设置占用类型
-        return getPointOccupy(rcsPoint.getMapId(), rcsPoint.getId()).tryOccupied(deviceCode, occupyType);
+        boolean flag = rcsOccupy.tryOccupied(deviceCode, occupyType);
+        if (flag) {
+            deviceOccupyIndex.computeIfAbsent(deviceCode, k -> ConcurrentHashMap.newKeySet())
+                    .add(rcsOccupy);
+        }
+        return flag;
     }
 
     /**
@@ -236,13 +270,120 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
         RcsPointOccupy rcsOccupy = getPointOccupy(rcsPoint.getMapId(), rcsPoint.getId());
         if (rcsOccupy != null) {
             rcsOccupy.setOccupied(deviceCode, occupyType);
+            //记录占用点位
+            deviceOccupyIndex.computeIfAbsent(deviceCode, k -> ConcurrentHashMap.newKeySet())
+                    .add(rcsOccupy);
         }
+    }
+
+    /**
+     * 【核心业务】更新驻留占用 (原子性：查重 -> 锁新 -> 清旧)
+     * <p>
+     * <strong>功能定义：</strong>
+     * 1. 幂等性检查：如果已经在目标点位持有目标类型的锁，直接返回。
+     * 2. 尝试以目标类型 (PARK 或 OFFLINE) 锁定新点位。
+     * 3. 锁定成功后，自动清理该设备持有的所有旧的 PARK 和 OFFLINE 锁。
+     * </p>
+     *
+     * @param deviceCode 设备编号
+     * @param newPoint   目标点位
+     * @param targetType 目标占用类型 (通常是 PARK 或 OFFLINE)
+     * @return true=更新成功(或已处于该状态); false=目标点位无法锁定
+     */
+    public boolean updateParkOccupy(String deviceCode, RcsPoint newPoint, PointOccupyTypeEnum targetType) {
+        // 1. 基础校验
+        if (deviceCode == null || newPoint == null || targetType == null) {
+            return false;
+        }
+
+        // 2. 获取新点位的 Occupy 对象
+        RcsPointOccupy newOccupy = getPointOccupy(newPoint.getMapId(), newPoint.getId());
+        if (newOccupy == null) {
+            RcsLog.sysLog.warn("更新驻留状态失败，目标点位不存在: {}", newPoint);
+            return false;
+        }
+
+        // 3. 【新增】幂等性/查重检查 (Fast Path)
+        // 如果该设备在目标点位，已经持有了想要申请的锁类型 (例如已经是 PARK)，直接返回成功
+        // 这一步避免了后续昂贵的“快照”和“清理”操作
+        if (newOccupy.getDeviceOccupyTypes(deviceCode).contains(targetType)) {
+            return true;
+        }
+
+        // 4. “快照”该设备当前的驻留锁 (查旧账)
+        // 必须在加新锁之前查，否则无法区分“刚加的”和“原有的”
+        Set<RcsPointOccupy> previousOccupies = new HashSet<>();
+        previousOccupies.addAll(getDeviceOccupiedPoints(deviceCode, PointOccupyTypeEnum.PARK));
+        previousOccupies.addAll(getDeviceOccupiedPoints(deviceCode, PointOccupyTypeEnum.OFFLINE));
+
+        // 5. 尝试锁定新状态 (Try Lock)
+        // 这一步如果失败，说明新坑位被别人占了，直接返回 false，旧锁保持不变
+        boolean lockSuccess = addOccupyType(deviceCode, newPoint, targetType);
+
+        // 6. 锁定成功，开始清理旧账 (Commit Transaction)
+        if (lockSuccess) {
+            for (RcsPointOccupy oldOccupy : previousOccupies) {
+                // --- 情况 A: 同点位状态切换 (例如 OFFLINE -> PARK) ---
+                if (oldOccupy.equals(newOccupy)) {
+                    // 如果目标是 PARK，那就把旧的 OFFLINE 删掉
+                    if (targetType == PointOccupyTypeEnum.PARK) {
+                        removeOccupyType(deviceCode, oldOccupy, PointOccupyTypeEnum.OFFLINE);
+                    }
+                    // 如果目标是 OFFLINE，那就把旧的 PARK 删掉
+                    else if (targetType == PointOccupyTypeEnum.OFFLINE) {
+                        removeOccupyType(deviceCode, oldOccupy, PointOccupyTypeEnum.PARK);
+                    }
+                }
+                // --- 情况 B: 位置变更 (彻底释放旧点) ---
+                else {
+                    removeOccupyType(deviceCode, oldOccupy, PointOccupyTypeEnum.PARK);
+                    removeOccupyType(deviceCode, oldOccupy, PointOccupyTypeEnum.OFFLINE);
+
+                    if (RcsLog.algorithmLog.isInfoEnabled()) {
+                        RcsLog.algorithmLog.info("AGV[{}] 驻留点变更: 释放旧点[{}], 锁定新点[{}] 类型:{}",
+                                deviceCode, oldOccupy.getPointId(), newPoint.getId(), targetType);
+                    }
+                }
+            }
+        } else {
+            // 锁定失败日志
+            if (RcsLog.algorithmLog.isInfoEnabled()) {
+                RcsLog.algorithmLog.warn("AGV[{}] 申请驻留点[{}] 类型[{}] 失败，已被占用",
+                        deviceCode, newPoint.getId(), targetType);
+            }
+        }
+
+        return lockSuccess;
     }
 
     /**
      * 移除占用类型
      *
-     * @param deviceCode 设备/任务编号
+     * @param deviceCode 设备编号
+     * @param rcsOccupy  点位占用类
+     * @param type       占用类型
+     * @return true=操作成功, false=点位不存在
+     */
+    public boolean removeOccupyType(String deviceCode, RcsPointOccupy rcsOccupy, PointOccupyTypeEnum type) {
+        if (rcsOccupy != null) {
+            boolean flag = rcsOccupy.release(deviceCode, type);
+            // 维护占用点位
+            // 只有当该设备在这个点位上没有任何锁了，才从索引中移除 Key
+            if (flag && !rcsOccupy.getDeviceOccupyState(deviceCode)) {
+                deviceOccupyIndex.computeIfPresent(deviceCode, (k, set) -> {
+                    set.remove(rcsOccupy);
+                    return set.isEmpty() ? null : set;
+                });
+            }
+            return flag;
+        }
+        return false;
+    }
+
+    /**
+     * 移除占用类型
+     *
+     * @param deviceCode 设备编号
      * @param rcsPoint   地图点位
      * @param type       占用类型
      * @return true=操作成功, false=点位不存在
@@ -250,7 +391,16 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
     public boolean removeOccupyType(String deviceCode, RcsPoint rcsPoint, PointOccupyTypeEnum type) {
         RcsPointOccupy rcsOccupy = getPointOccupy(rcsPoint.getMapId(), rcsPoint.getId());
         if (rcsOccupy != null) {
-            return rcsOccupy.release(deviceCode, type);
+            boolean flag = rcsOccupy.release(deviceCode, type);
+            // 维护占用点位
+            // 只有当该设备在这个点位上没有任何锁了，才从索引中移除 Key
+            if (flag && !rcsOccupy.getDeviceOccupyState(deviceCode)) {
+                deviceOccupyIndex.computeIfPresent(deviceCode, (k, keys) -> {
+                    keys.remove(rcsOccupy);
+                    return keys.isEmpty() ? null : keys;
+                });
+            }
+            return flag;
         }
         return false;
     }
@@ -280,6 +430,75 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
             }
         }
         return anyChanged;
+    }
+
+    /**
+     * 获取指定设备当前占用的所有点位对象
+     * <p>
+     * 业务层直接调用此方法，拿到的是 RcsPointOccupy 对象集合，无需关心 Key。
+     * </p>
+     */
+    public Set<RcsPointOccupy> getDeviceOccupiedPoints(String deviceCode) {
+        // 1. 从反向索引获取 Keys
+        Set<RcsPointOccupy> keys = deviceOccupyIndex.get(deviceCode);
+        if (keys == null || keys.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        // 2. 转换为对象
+        Set<RcsPointOccupy> result = new HashSet<>(keys.size());
+        for (RcsPointOccupy occupy : keys) {
+            // 二次确认：防止并发间隙中对象被删除了
+            if (occupy != null) {
+                result.add(occupy);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 【核心实现】获取指定设备、指定类型的占用点位对象
+     * <p>
+     * 1. 利用反向索引快速定位设备涉及的所有点位 (O(1))
+     * 2. 内存过滤出包含指定占用类型的点位 (O(k), k为该设备占用的点位数，通常极小)
+     * </p>
+     *
+     * @param deviceCode   设备编号
+     * @param specificType 指定的占用类型 (如 PARK). 如果为 null，则返回该设备占用的所有点位
+     * @return 符合过滤条件的点位集合
+     */
+    public Set<RcsPointOccupy> getDeviceOccupiedPoints(String deviceCode, PointOccupyTypeEnum specificType) {
+        // 1. 从反向索引获取 Keys (快速缩小范围)
+        Set<RcsPointOccupy> keys = deviceOccupyIndex.get(deviceCode);
+        if (keys == null || keys.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        Set<RcsPointOccupy> result = new HashSet<>(keys.size());
+
+        // 2. 遍历并过滤
+        for (RcsPointOccupy occupy : keys) {
+
+            // 防御性检查：对象可能已被移除
+            if (occupy == null) {
+                continue;
+            }
+
+            // 3. 核心判断逻辑
+            if (specificType == null) {
+                // 如果不指定类型，只要设备在这个点有任意锁，就返回
+                if (occupy.getDeviceOccupyState(deviceCode)) {
+                    result.add(occupy);
+                }
+            } else {
+                // 如果指定了类型 (例如 PARK)，检查该设备在这个点位是否持有该特定类型的锁
+                Set<PointOccupyTypeEnum> types = occupy.getDeviceOccupyTypes(deviceCode);
+                if (types != null && types.contains(specificType)) {
+                    result.add(occupy);
+                }
+            }
+        }
+        return result;
     }
 
     // ================== 4. 图算法查询 ==================

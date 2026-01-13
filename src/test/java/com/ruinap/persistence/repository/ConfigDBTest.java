@@ -5,7 +5,7 @@ import cn.hutool.db.Db;
 import cn.hutool.db.Entity;
 import cn.hutool.db.ds.simple.SimpleDataSource;
 import com.ruinap.infra.config.DbSetting;
-import com.ruinap.persistence.datasource.RcsDSFactory;
+import com.ruinap.persistence.factory.RcsDSFactory;
 import org.junit.jupiter.api.*;
 import org.mockito.Mockito;
 

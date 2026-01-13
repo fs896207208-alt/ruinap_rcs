@@ -1,0 +1,80 @@
+package com.ruinap.adapter.communicate.base;
+
+import com.slamopto.common.VthreadPool;
+import com.slamopto.common.enums.ProtocolEnum;
+import com.slamopto.communicate.base.enums.ServerRouteEnum;
+import com.slamopto.communicate.base.protocol.IProtocolOption;
+import com.slamopto.communicate.server.NettyServer;
+import com.slamopto.communicate.server.handler.IServerHandler;
+import com.slamopto.communicate.server.handler.impl.*;
+import com.slamopto.log.RcsLog;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 服务端属性
+ *
+ * @author qianye
+ * @create 2025-04-29 16:06
+ */
+@Setter
+@Getter
+public class ServerAttribute {
+    /**
+     * 路径处理器映射表
+     */
+    public static final Map<String, IServerHandler> ROUTES = new HashMap<>();
+
+    /*
+      初始化路由表，根据 URL 判断该路由是否允许连接
+     */
+    static {
+        // 可以根据需要添加更多路由
+        ROUTES.put(ProtocolEnum.WEBSOCKET_SERVER.getProtocol() + ServerRouteEnum.CONSOLE.getRoute(), new ConsoleWebSocketHandler());
+        ROUTES.put(ProtocolEnum.WEBSOCKET_SERVER.getProtocol() + ServerRouteEnum.VISUAL.getRoute(), new VisualWebSocketHandler());
+        ROUTES.put(ProtocolEnum.WEBSOCKET_SERVER.getProtocol() + ServerRouteEnum.BUSINESS.getRoute(), new BusinessWebSocketHandler());
+        ROUTES.put(ProtocolEnum.WEBSOCKET_SERVER.getProtocol() + ServerRouteEnum.SIMULATION.getRoute(), new SimulationWebSocketHandler());
+
+        ROUTES.put(ProtocolEnum.MQTT_SERVER.getProtocol() + ServerRouteEnum.MQTT.getRoute(), new Vda5050MqttServerHandler());
+    }
+
+    /**
+     * 端口
+     */
+    private Integer port;
+    /**
+     * 协议枚举
+     */
+    private ProtocolEnum protocol;
+    /**
+     * 协议处理器
+     */
+    private IProtocolOption<ServerBootstrap, NettyServer> protocolOption;
+    /**
+     * 主线程组，处理连接请求
+     */
+    private final EventLoopGroup bossGroup = new NioEventLoopGroup(2, VthreadPool.getDaemonThread("sbvt-"));
+    /**
+     * 工作线程组，处理I/O操作
+     */
+    private EventLoopGroup workerGroup = SharableAttribute.workerGroup;
+
+    /**
+     * 事件处理器
+     */
+//    private IServerHandler eventHandler;
+    public ServerAttribute(IProtocolOption<ServerBootstrap, NettyServer> protocolOption, Integer port, ProtocolEnum protocol) {
+        this.port = port;
+        this.protocol = protocol;
+        this.protocolOption = protocolOption;
+        if (protocolOption == null) {
+            RcsLog.consoleLog.error("请设置协议处理器");
+        }
+    }
+}

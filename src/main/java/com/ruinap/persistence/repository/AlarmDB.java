@@ -6,7 +6,7 @@ import cn.hutool.db.sql.Condition;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Service;
 import com.ruinap.infra.log.RcsLog;
-import com.ruinap.persistence.datasource.RcsDSFactory;
+import com.ruinap.persistence.factory.RcsDSFactory;
 
 import java.sql.SQLException;
 import java.util.List;

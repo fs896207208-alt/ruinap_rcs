@@ -4,7 +4,7 @@ import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.ReflectUtil;
 import cn.hutool.db.Db;
 import cn.hutool.db.Entity;
-import com.ruinap.persistence.datasource.RcsDSFactory;
+import com.ruinap.persistence.factory.RcsDSFactory;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.*;
 import org.mockito.Mockito;

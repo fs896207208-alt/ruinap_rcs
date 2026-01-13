@@ -3,6 +3,7 @@ package com.ruinap.core.map.pojo;
 import com.ruinap.core.map.enums.PointOccupyTypeEnum;
 import com.ruinap.infra.lock.RcsLock;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.io.IOException;
@@ -22,9 +23,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Data
 @NoArgsConstructor
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class RcsPointOccupy implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
+
+    /**
+     * 新增 key 字段 (MapKeyUtil生成的唯一ID)
+     * 把它作为对象的“身份证”，在对象创建时就注入进去。
+     */
+    @EqualsAndHashCode.Include
+    private Long key;
 
     private Integer pointId;
 
@@ -44,7 +53,8 @@ public class RcsPointOccupy implements Serializable {
      */
     private transient RcsLock lock = RcsLock.ofReentrant();
 
-    public RcsPointOccupy(Integer pointId) {
+    public RcsPointOccupy(Long key, Integer pointId) {
+        this.key = key;
         this.pointId = pointId;
     }
 

@@ -7,7 +7,7 @@ import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.annotation.Order;
 import com.ruinap.infra.framework.boot.CommandLineRunner;
 import com.ruinap.infra.log.RcsLog;
-import com.ruinap.persistence.datasource.RcsDSFactory;
+import com.ruinap.persistence.factory.RcsDSFactory;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.output.MigrateResult;
 

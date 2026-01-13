@@ -4,7 +4,7 @@ import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.config.AopFeatureControl;
 import com.ruinap.infra.log.RcsLog;
-import com.ruinap.persistence.datasource.RcsDSFactory;
+import com.ruinap.persistence.factory.RcsDSFactory;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
