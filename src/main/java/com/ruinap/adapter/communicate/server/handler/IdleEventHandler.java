@@ -1,6 +1,6 @@
 package com.ruinap.adapter.communicate.server.handler;
 
-import com.slamopto.log.RcsLog;
+import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleState;

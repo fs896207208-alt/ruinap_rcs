@@ -1,12 +1,11 @@
 package com.ruinap.adapter.communicate.base;
 
-import com.slamopto.common.enums.BrandEnum;
-import com.slamopto.common.enums.LinkEquipmentTypeEnum;
-import com.slamopto.common.enums.ProtocolEnum;
-import com.slamopto.communicate.base.protocol.IProtocolOption;
-import com.slamopto.communicate.client.NettyClient;
-import com.slamopto.communicate.client.handler.ClientHandler;
-import com.slamopto.log.RcsLog;
+import com.ruinap.adapter.communicate.base.protocol.IProtocolOption;
+import com.ruinap.adapter.communicate.client.NettyClient;
+import com.ruinap.adapter.communicate.client.handler.ClientHandler;
+import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
+import com.ruinap.infra.enums.netty.ProtocolEnum;
+import com.ruinap.infra.log.RcsLog;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.EventLoopGroup;
@@ -42,10 +41,6 @@ public class ClientAttribute {
      * 协议处理器
      */
     private IProtocolOption<Bootstrap, NettyClient> protocolOption;
-    /**
-     * 品牌枚举
-     */
-    private BrandEnum brand;
     /**
      * 设备类型枚举
      */
@@ -86,17 +81,15 @@ public class ClientAttribute {
      * @param uri              地址
      * @param clientId         客户端ID (请确保唯一)
      * @param maxConnectFailed 最大连接失败次数
-     * @param brand            品牌枚举
      * @param equipmentType    设备类型枚举
      * @param protocol         协议枚举
      * @param protocolOption   协议处理器
      * @param handler          客户端处理器
      */
-    public ClientAttribute(URI uri, String clientId, String maxConnectFailed, BrandEnum brand, LinkEquipmentTypeEnum equipmentType, ProtocolEnum protocol, IProtocolOption<Bootstrap, NettyClient> protocolOption, ClientHandler handler) {
+    public ClientAttribute(URI uri, String clientId, String maxConnectFailed, LinkEquipmentTypeEnum equipmentType, ProtocolEnum protocol, IProtocolOption<Bootstrap, NettyClient> protocolOption, ClientHandler handler) {
         this.uri = uri;
         this.clientId = clientId;
         this.maxConnectFailed = maxConnectFailed;
-        this.brand = brand;
         this.equipmentType = equipmentType;
         this.protocol = protocol;
         this.protocolOption = protocolOption;

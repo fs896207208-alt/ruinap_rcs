@@ -1,12 +1,10 @@
 package com.ruinap.adapter.communicate.server.handler.impl;
 
 import cn.hutool.json.JSONObject;
-import com.slamopto.communicate.base.ServerAttribute;
-import com.slamopto.communicate.base.enums.AttributeKeyEnum;
-import com.slamopto.communicate.event.SimulationWebSocketEvent;
-import com.slamopto.communicate.server.NettyServer;
-import com.slamopto.communicate.server.handler.IServerHandler;
-import com.slamopto.log.RcsLog;
+import com.ruinap.adapter.communicate.base.ServerAttribute;
+import com.ruinap.adapter.communicate.server.handler.IServerHandler;
+import com.ruinap.infra.enums.netty.AttributeKeyEnum;
+import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;

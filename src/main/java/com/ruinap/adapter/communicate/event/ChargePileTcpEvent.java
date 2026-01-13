@@ -1,11 +1,10 @@
 package com.ruinap.adapter.communicate.event;
 
-import com.slamopto.common.base.BaseConversionUtils;
-import com.slamopto.communicate.base.ClientAttribute;
-import com.slamopto.communicate.base.event.AbstractClientEvent;
-import com.slamopto.db.DbCache;
-import com.slamopto.equipment.domain.RcsChargePile;
-import com.slamopto.log.RcsLog;
+
+import com.ruinap.adapter.communicate.base.ClientAttribute;
+import com.ruinap.adapter.communicate.base.event.AbstractClientEvent;
+import com.ruinap.core.equipment.pojo.RcsChargePile;
+import com.ruinap.infra.log.RcsLog;
 
 import java.util.List;
 

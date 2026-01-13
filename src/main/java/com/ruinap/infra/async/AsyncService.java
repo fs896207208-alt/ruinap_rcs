@@ -29,6 +29,16 @@ public class AsyncService {
     private VthreadPool vThreadPool;
 
     /**
+     * 提交异步任务（Runnable），返回 CompletableFuture，请注意该方法返回一个Supplier，需手动调用.get()方法
+     *
+     * @param runnable 任务逻辑（无参无返回值的函数）
+     * @return Supplier<CompletableFuture < Void>>
+     */
+    public Supplier<CompletableFuture<Void>> runAsync(Runnable runnable) {
+        return () -> vThreadPool.runAsync(runnable);
+    }
+
+    /**
      * 执行任务并等待结果（带超时）
      * <p>
      * 这是一个组合方法：自动提交到 vThreadPool + 自动等待
@@ -68,7 +78,7 @@ public class AsyncService {
 
         // 将所有 Runnable 包装为 CompletableFuture 并提交到虚拟线程池
         // 使用 toArray(CompletableFuture[]::new) 转换为数组以适配 allOf
-        java.util.concurrent.CompletableFuture<?>[] futures = tasks.stream()
+        CompletableFuture<?>[] futures = tasks.stream()
                 .map(task -> vThreadPool.runAsync(() -> {
                     try {
                         task.run();
@@ -77,10 +87,10 @@ public class AsyncService {
                         RcsLog.sysLog.error("AsyncService-executeAll 任务执行异常", e);
                     }
                 }))
-                .toArray(java.util.concurrent.CompletableFuture[]::new);
+                .toArray(CompletableFuture[]::new);
 
         // 阻塞等待所有任务执行完毕
-        java.util.concurrent.CompletableFuture.allOf(futures).join();
+        CompletableFuture.allOf(futures).join();
     }
 
     /**

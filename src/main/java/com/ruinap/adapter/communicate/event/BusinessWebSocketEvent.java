@@ -5,23 +5,17 @@ import cn.hutool.db.Entity;
 import cn.hutool.db.sql.Condition;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
-import com.slamopto.algorithm.domain.PlanStateEnum;
-import com.slamopto.command.system.BusinessCommand;
-import com.slamopto.communicate.base.event.AbstractServerEvent;
-import com.slamopto.communicate.server.NettyServer;
-import com.slamopto.communicate.server.handler.impl.BusinessWebSocketHandler;
-import com.slamopto.db.DbCache;
-import com.slamopto.db.database.AgvDB;
-import com.slamopto.db.database.ConfigDB;
-import com.slamopto.db.database.TaskDB;
-import com.slamopto.equipment.agv.RcsAgvCache;
-import com.slamopto.equipment.domain.RcsAgv;
-import com.slamopto.log.RcsLog;
-import com.slamopto.task.TaskPathCache;
-import com.slamopto.task.domain.RcsTask;
-import com.slamopto.task.domain.TaskPath;
-import com.slamopto.task.enums.TaskStateEnum;
-import com.slamopto.task.enums.TaskTypeEnum;
+import com.ruinap.adapter.communicate.base.event.AbstractServerEvent;
+import com.ruinap.adapter.communicate.server.NettyServer;
+import com.ruinap.adapter.communicate.server.handler.impl.BusinessWebSocketHandler;
+import com.ruinap.core.equipment.manager.AgvManager;
+import com.ruinap.core.equipment.pojo.RcsAgv;
+import com.ruinap.infra.command.system.BusinessCommand;
+import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.log.RcsLog;
+import com.ruinap.persistence.repository.AgvDB;
+import com.ruinap.persistence.repository.ConfigDB;
+import com.ruinap.persistence.repository.TaskDB;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -36,6 +30,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * @create 2025-05-19 19:27
  */
 public class BusinessWebSocketEvent extends AbstractServerEvent {
+
+    @Autowired
+    private AgvManager agvManager;
 
     /**
      * 处理事件
@@ -94,10 +91,10 @@ public class BusinessWebSocketEvent extends AbstractServerEvent {
      * @param serverId   服务端id
      * @param jsonObject 数据
      */
-    private static void agvInfo(String serverId, JSONObject jsonObject) {
+    private void agvInfo(String serverId, JSONObject jsonObject) {
 
         ArrayList<JSONObject> arrayList = new ArrayList<>();
-        RcsAgvCache.getRcsAgvMap().forEach((key, agv) -> {
+        agvManager.getRcsAgvMap().forEach((key, agv) -> {
             arrayList.add(new JSONObject(agv));
         });
         JSONObject entries = BusinessCommand.agvInfo(200, "成功", new JSONArray(arrayList, false));

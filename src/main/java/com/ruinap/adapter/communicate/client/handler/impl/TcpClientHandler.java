@@ -1,16 +1,15 @@
 package com.ruinap.adapter.communicate.client.handler.impl;
 
 import cn.hutool.json.JSONObject;
-import com.slamopto.common.enums.LinkEquipmentTypeEnum;
-import com.slamopto.communicate.base.ClientAttribute;
-import com.slamopto.communicate.base.enums.AttributeKeyEnum;
-import com.slamopto.communicate.base.event.AbstractClientEvent;
-import com.slamopto.communicate.client.handler.ClientHandler;
-import com.slamopto.communicate.client.registry.EventRegistry;
-import com.slamopto.db.DbCache;
-import com.slamopto.equipment.domain.RcsAgv;
-import com.slamopto.equipment.domain.RcsChargePile;
-import com.slamopto.log.RcsLog;
+import com.ruinap.adapter.communicate.base.ClientAttribute;
+import com.ruinap.adapter.communicate.base.event.AbstractClientEvent;
+import com.ruinap.adapter.communicate.client.handler.ClientHandler;
+import com.ruinap.adapter.communicate.client.registry.EventRegistry;
+import com.ruinap.core.equipment.pojo.RcsAgv;
+import com.ruinap.core.equipment.pojo.RcsChargePile;
+import com.ruinap.infra.enums.netty.AttributeKeyEnum;
+import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
+import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 

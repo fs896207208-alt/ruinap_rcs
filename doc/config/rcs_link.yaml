@@ -21,10 +21,6 @@ agv_link:
     #类型：String
     #默认值：ws_client
     pact: ws_client
-    #品牌，支持不同品牌的AGV
-    #类型：String
-    #默认值：slamopto
-    brand: slamopto
     #类型，不同类型的AGV可以接取的任务不一样，1潜伏式 2叉车式
     #类型：int
     #默认值：1
@@ -48,8 +44,6 @@ agv_link:
     1:
       #通信协议，如果不填写，则使用通用配置
       pact: ws_client
-      #品牌，不填写，则使用通用配置
-      brand: slamopto
       #类型，不填写，则使用通用配置
       type: 1
       #连接失败次数，不填写，则使用通用配置
@@ -63,79 +57,66 @@ agv_link:
       #url: ws://192.168.150.172:10001
 #    2:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://192.168.50.172:10002
 #    3:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://192.168.50.172:10003
 #    4:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://192.168.50.172:10004
 #    5:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://192.168.50.172:10005
 #    6:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://192.168.50.172:10006
 #    7:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://192.168.50.172:10007
 #    8:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://192.168.50.172:10008
 #    9:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://192.168.50.172:10009
 #    10:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://192.168.50.172:10010
 #    2:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://47.97.215.157:8082
 #    3:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://47.97.215.157:8083
 #    4:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://47.97.215.157:8084
 #    5:
 #      pact: ws_client
-#      brand: slamopto
 #      type: 1
 #      connect_failed: 5
 #      url: ws://47.103.209.16:10005

@@ -1,7 +1,7 @@
 package com.ruinap.adapter.communicate.base.handler;
 
 import cn.hutool.json.JSONObject;
-import com.slamopto.communicate.base.ServerAttribute;
+import com.ruinap.adapter.communicate.base.ServerAttribute;
 import io.netty.channel.ChannelHandlerContext;
 
 /**

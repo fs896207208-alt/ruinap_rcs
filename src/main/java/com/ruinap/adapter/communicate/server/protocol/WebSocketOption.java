@@ -1,13 +1,13 @@
 package com.ruinap.adapter.communicate.server.protocol;
 
 import cn.hutool.json.JSONObject;
-import com.slamopto.common.enums.ProtocolEnum;
-import com.slamopto.communicate.base.ServerAttribute;
-import com.slamopto.communicate.base.enums.AttributeKeyEnum;
-import com.slamopto.communicate.base.protocol.IProtocolOption;
-import com.slamopto.communicate.server.NettyServer;
-import com.slamopto.communicate.server.handler.IdleEventHandler;
-import com.slamopto.log.RcsLog;
+import com.ruinap.adapter.communicate.base.ServerAttribute;
+import com.ruinap.adapter.communicate.base.protocol.IProtocolOption;
+import com.ruinap.adapter.communicate.server.NettyServer;
+import com.ruinap.adapter.communicate.server.handler.IdleEventHandler;
+import com.ruinap.infra.enums.netty.AttributeKeyEnum;
+import com.ruinap.infra.enums.netty.ProtocolEnum;
+import com.ruinap.infra.log.RcsLog;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;

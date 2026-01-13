@@ -1,7 +1,8 @@
 package com.ruinap.adapter.communicate.base.event;
 
-import com.slamopto.communicate.base.ClientAttribute;
-import com.slamopto.log.RcsLog;
+
+import com.ruinap.adapter.communicate.base.ClientAttribute;
+import com.ruinap.infra.log.RcsLog;
 
 /**
  * 客户端抽象事件
@@ -18,6 +19,6 @@ public abstract class AbstractClientEvent<T> {
      * @param frame     消息帧
      */
     public void receiveMessage(ClientAttribute attribute, T frame) {
-        RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(attribute.getClientId(), "请重写 AbstractClientEvent.receiveMessage 方法进行消息处理"));
+        RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "请重写 AbstractClientEvent.receiveMessage 方法进行消息处理");
     }
 }

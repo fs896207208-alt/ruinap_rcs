@@ -3,9 +3,9 @@ package com.ruinap.adapter.communicate.event;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
-import com.slamopto.communicate.base.ClientAttribute;
-import com.slamopto.communicate.base.event.AbstractClientEvent;
-import com.slamopto.log.RcsLog;
+import com.ruinap.adapter.communicate.base.ClientAttribute;
+import com.ruinap.adapter.communicate.base.event.AbstractClientEvent;
+import com.ruinap.infra.log.RcsLog;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 
 import java.util.concurrent.CompletableFuture;

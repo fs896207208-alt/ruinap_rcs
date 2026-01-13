@@ -1,7 +1,7 @@
 package com.ruinap.adapter.communicate.server.handler;
 
-import com.slamopto.communicate.base.ServerAttribute;
-import com.slamopto.communicate.base.handler.IBaseServerHandler;
+import com.ruinap.adapter.communicate.base.ServerAttribute;
+import com.ruinap.adapter.communicate.base.handler.IBaseServerHandler;
 import io.netty.channel.ChannelHandlerContext;
 
 /**

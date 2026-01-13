@@ -1,13 +1,14 @@
 package com.ruinap.adapter.communicate.base;
 
-import com.slamopto.common.VthreadPool;
-import com.slamopto.common.enums.ProtocolEnum;
-import com.slamopto.communicate.base.enums.ServerRouteEnum;
-import com.slamopto.communicate.base.protocol.IProtocolOption;
-import com.slamopto.communicate.server.NettyServer;
-import com.slamopto.communicate.server.handler.IServerHandler;
-import com.slamopto.communicate.server.handler.impl.*;
-import com.slamopto.log.RcsLog;
+import com.ruinap.adapter.communicate.base.protocol.IProtocolOption;
+import com.ruinap.adapter.communicate.server.NettyServer;
+import com.ruinap.adapter.communicate.server.handler.IServerHandler;
+import com.ruinap.adapter.communicate.server.handler.impl.*;
+import com.ruinap.infra.enums.netty.ProtocolEnum;
+import com.ruinap.infra.enums.netty.ServerRouteEnum;
+import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.log.RcsLog;
+import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -26,6 +27,9 @@ import java.util.Map;
 @Setter
 @Getter
 public class ServerAttribute {
+
+    @Autowired
+    private VthreadPool vthreadPool;
     /**
      * 路径处理器映射表
      */
@@ -59,7 +63,7 @@ public class ServerAttribute {
     /**
      * 主线程组，处理连接请求
      */
-    private final EventLoopGroup bossGroup = new NioEventLoopGroup(2, VthreadPool.getDaemonThread("sbvt-"));
+    private final EventLoopGroup bossGroup = new NioEventLoopGroup(2, vthreadPool.getDaemonThread("sbvt-"));
     /**
      * 工作线程组，处理I/O操作
      */

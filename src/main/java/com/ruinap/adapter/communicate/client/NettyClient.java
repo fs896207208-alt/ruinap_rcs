@@ -2,14 +2,15 @@ package com.ruinap.adapter.communicate.client;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
-import com.slamopto.common.config.CoreYaml;
-import com.slamopto.common.enums.LinkEquipmentTypeEnum;
-import com.slamopto.communicate.base.ClientAttribute;
-import com.slamopto.communicate.base.IBaseClient;
-import com.slamopto.communicate.base.enums.AttributeKeyEnum;
-import com.slamopto.db.business.AlarmManage;
-import com.slamopto.db.enums.AlarmCodeEnum;
-import com.slamopto.log.RcsLog;
+import com.ruinap.adapter.communicate.base.ClientAttribute;
+import com.ruinap.adapter.communicate.base.IBaseClient;
+import com.ruinap.core.business.AlarmManager;
+import com.ruinap.infra.config.CoreYaml;
+import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
+import com.ruinap.infra.enums.netty.AttributeKeyEnum;
+import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
+import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.log.RcsLog;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
@@ -34,6 +35,10 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class NettyClient extends SimpleChannelInboundHandler<Object> implements IBaseClient {
 
+    @Autowired
+    private CoreYaml coreYaml;
+    @Autowired
+    private AlarmManager alarmManager;
     /**
      * 存储所有客户端
      */
@@ -237,41 +242,42 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
         String equipmentType = attribute.getEquipmentType().getEquipmentType();
         ChannelHandlerContext ctx = attribute.getContext();
 
+        String key2 = StrUtil.format("{}_{}", equipmentType, clientId);
         if (ctx == null || !ctx.channel().isActive()) {
-            String errorMsg = String.format("[%s] 服务端未连接或通道未激活", equipmentType + clientId);
+            String errorMsg = String.format("[%s] 服务端未连接或通道未激活", key2);
             //记录日志
             if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
-                RcsLog.communicateLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, errorMsg));
+                RcsLog.communicateLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), key2, errorMsg);
             } else {
-                RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, errorMsg));
+                RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), key2, errorMsg);
             }
             future.completeExceptionally(new IllegalStateException(errorMsg));
             return future;
         }
 
-        String key = StrUtil.format("{}_{}_{}", equipmentType, clientId, requestId);
+        String key3 = StrUtil.format("{}_{}_{}", equipmentType, clientId, requestId);
         try {
             // 存储带类型信息的Future
-            attribute.putFuture(key, future, responseType);
+            attribute.putFuture(key3, future, responseType);
             EventLoop eventLoop = ctx.channel().eventLoop();
 
             // 设置超时处理
-            long timeoutSeconds = Long.parseLong(CoreYaml.getNettyFutureTimeout());
+            long timeoutSeconds = Long.parseLong(coreYaml.getNettyFutureTimeout());
             ScheduledFuture<?> timeoutScheduledFuture = eventLoop.schedule(() -> {
                 if (future.completeExceptionally(new TimeoutException("等待服务端响应超时"))) {
-                    attribute.getFutures().remove(key);
+                    attribute.getFutures().remove(key3);
                     //记录日志
                     if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
-                        RcsLog.communicateLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "请求超时"));
+                        RcsLog.communicateLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), key2, "请求超时");
                     } else {
-                        RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "请求超时"));
+                        RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), key2, "请求超时");
                     }
                 }
             }, timeoutSeconds, TimeUnit.SECONDS);
 
             future.whenComplete((res, ex) -> {
                 timeoutScheduledFuture.cancel(false);
-                attribute.getFutures().remove(key);
+                attribute.getFutures().remove(key3);
             });
 
             // 发送消息（自动包装为协议格式）
@@ -283,13 +289,13 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
 
             return future;
         } catch (Exception e) {
-            attribute.getFutures().remove(key);
+            attribute.getFutures().remove(key3);
             String errorMsg = String.format("消息发送异常: %s", e.getMessage());
             //记录日志
             if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
-                RcsLog.communicateLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, errorMsg));
+                RcsLog.communicateLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), key2, errorMsg);
             } else {
-                RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, errorMsg));
+                RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), key2, errorMsg);
             }
             future.completeExceptionally(new RuntimeException(errorMsg, e));
             return future;
@@ -313,15 +319,15 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
             //重置连接失败计数器
             FAILED_COUNTERS.put(clientId, new AtomicInteger(0));
             //添加到客户端列表
-            String key = attribute.getEquipmentType().getEquipmentType() + "_" + clientId;
+            String key = StrUtil.format("{}_{}", attribute.getEquipmentType().getEquipmentType(), clientId);
             CLIENTS.put(key, this);
             // 将客户端上下文存储到全局 Map 中
             attribute.setContext(ctx);
             attribute.setRequestId(new AtomicLong(0));
 
             // 连接建立时触发
-            RcsLog.consoleLog.info(RcsLog.formatTemplateRandom(clientId, "channelActive 已连接到 " + attribute.getProtocol().getProtocol() + " 服务器: " + ctx.channel().remoteAddress()));
-            RcsLog.communicateLog.info(RcsLog.formatTemplateRandom(clientId, "channelActive 已连接到 " + attribute.getProtocol().getProtocol() + " 服务器: " + ctx.channel().remoteAddress()));
+            RcsLog.consoleLog.info(RcsLog.getTemplate(3), RcsLog.randomInt(), key, "channelActive 已连接到 " + attribute.getProtocol().getProtocol() + " 服务器: " + ctx.channel().remoteAddress());
+            RcsLog.communicateLog.info(RcsLog.getTemplate(3), RcsLog.randomInt(), key, "channelActive 已连接到 " + attribute.getProtocol().getProtocol() + " 服务器: " + ctx.channel().remoteAddress());
         }
 
         super.channelActive(ctx);
@@ -357,9 +363,9 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
                 String equipmentType = attribute.getEquipmentType().getEquipmentType();
                 //记录日志
                 if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
-                    RcsLog.communicateLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "已记录 " + attribute.getProtocol().getProtocol() + " 服务器上下文"));
+                    RcsLog.communicateLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), key, "已记录 " + attribute.getProtocol().getProtocol() + " 服务器上下文");
                 } else {
-                    RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "已记录 " + attribute.getProtocol().getProtocol() + " 服务器上下文"));
+                    RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), key, "已记录 " + attribute.getProtocol().getProtocol() + " 服务器上下文");
                 }
             }
         }
@@ -392,12 +398,12 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
         String clientId = channel.attr(AttributeKeyEnum.CLIENT_ID.key()).get();
         String equipmentType = attribute.getEquipmentType().getEquipmentType();
         // 连接关闭时触发
-        RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(clientId, "与 " + attribute.getProtocol() + " 服务器断开连接: " + ctx.channel().remoteAddress()));
+        RcsLog.consoleLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), clientId, "与 " + attribute.getProtocol() + " 服务器断开连接: " + ctx.channel().remoteAddress());
         //记录日志
         if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
-            RcsLog.communicateLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "与服务器断开连接: " + ctx.channel().remoteAddress()));
+            RcsLog.communicateLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "与服务器断开连接: " + ctx.channel().remoteAddress());
         } else {
-            RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "与服务器断开连接: " + ctx.channel().remoteAddress()));
+            RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "与服务器断开连接: " + ctx.channel().remoteAddress());
         }
         if (clientId != null && !clientId.isEmpty()) {
             // 删除客户端上下文
@@ -407,14 +413,14 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
             attribute.setRequestId(new AtomicLong(0L));
             //记录日志
             if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
-                RcsLog.communicateLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "服务器断开连接，上下文已删除"));
+                RcsLog.communicateLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "服务器断开连接，上下文已删除");
             } else {
-                RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "服务器断开连接，上下文已删除"));
+                RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "服务器断开连接，上下文已删除");
             }
 
-            RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "服务器断开连接，上下文已删除"));
+            RcsLog.consoleLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "服务器断开连接，上下文已删除");
             //触发告警
-            AlarmManage.triggerAlarm(equipmentType + clientId, AlarmCodeEnum.E12003, "rcs");
+            alarmManager.triggerAlarm(equipmentType + clientId, AlarmCodeEnum.E12003, "rcs");
         }
 
         //调用事件处理器方法
@@ -443,9 +449,9 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
         int failedCount = FAILED_COUNTERS.get(clientId).incrementAndGet();
         //记录日志
         if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
-            RcsLog.communicateLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "Channel 从客户端的 EventLoop 中注销，注销次数:" + failedCount));
+            RcsLog.communicateLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "Channel 从客户端的 EventLoop 中注销，注销次数:" + failedCount);
         } else {
-            RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "Channel 从客户端的 EventLoop 中注销，注销次数:" + failedCount));
+            RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "Channel 从客户端的 EventLoop 中注销，注销次数:" + failedCount);
         }
 
         if (failedCount >= Integer.parseInt(attribute.getMaxConnectFailed())) {
@@ -475,9 +481,9 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
         cause.printStackTrace();
         //记录日志
         if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
-            RcsLog.communicateLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "client_error", cause.getMessage()));
+            RcsLog.communicateLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "client_error", cause.getMessage());
         } else {
-            RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(equipmentType + clientId, "client_error", cause.getMessage()));
+            RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "client_error", cause.getMessage());
         }
 
         //调用事件处理器方法

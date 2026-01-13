@@ -1,4 +1,4 @@
-package com.ruinap.adapter.communicate.base.enums;
+package com.ruinap.infra.enums.netty;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
