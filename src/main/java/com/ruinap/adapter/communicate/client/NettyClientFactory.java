@@ -8,12 +8,16 @@ import com.ruinap.adapter.communicate.client.handler.impl.TcpClientHandler;
 import com.ruinap.adapter.communicate.client.handler.impl.WebSocketClientHandler;
 import com.ruinap.adapter.communicate.client.protocol.TcpOption;
 import com.ruinap.adapter.communicate.client.protocol.WebSocketOption;
+import com.ruinap.core.business.AlarmManager;
 import com.ruinap.infra.async.AsyncService;
+import com.ruinap.infra.async.OrderedTaskDispatcher;
+import com.ruinap.infra.config.CoreYaml;
 import com.ruinap.infra.config.LinkYaml;
 import com.ruinap.infra.enums.netty.BrandEnum;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 
@@ -31,6 +35,7 @@ import java.util.function.Supplier;
  * @author qianye
  * @create 2025-05-09 14:13
  */
+@Component
 public class NettyClientFactory {
 
     @Autowired
@@ -39,6 +44,12 @@ public class NettyClientFactory {
     private VthreadPool vthreadPool;
     @Autowired
     private AsyncService asyncService;
+    @Autowired
+    private CoreYaml coreYaml;
+    @Autowired
+    private AlarmManager alarmManager;
+    @Autowired
+    private OrderedTaskDispatcher taskDispatcher;
     /**
      * 通信协议选项
      */
@@ -346,11 +357,11 @@ public class NettyClientFactory {
      * @param handler        处理器
      * @return 是否成功
      */
-    private static CompletableFuture<Boolean> startClient(ProtocolEnum protocol, IProtocolOption protocolOption, URI uri, LinkEquipmentTypeEnum equipmentType, String clientId, String connectFailed, ClientHandler handler) {
+    private CompletableFuture<Boolean> startClient(ProtocolEnum protocol, IProtocolOption protocolOption, URI uri, LinkEquipmentTypeEnum equipmentType, String clientId, String connectFailed, ClientHandler handler) {
         //创建客户端属性
         ClientAttribute clientAttribute = new ClientAttribute(uri, clientId, connectFailed, equipmentType, protocol, protocolOption, handler);
         //启动客户端
-        return new NettyClient(clientAttribute).start();
+        return new NettyClient(clientAttribute, taskDispatcher, coreYaml, alarmManager, vthreadPool).start();
     }
 
 }

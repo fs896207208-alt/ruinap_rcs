@@ -163,10 +163,7 @@ public class Vda5050MqttServerHandler implements IServerHandler {
         // 这样就彻底解耦了 Netty 的内存管理，后续可以安全地在任何线程使用
         byte[] dataCopy = new byte[payload.readableBytes()];
         payload.getBytes(payload.readerIndex(), dataCopy);
-
-        // 4. 异步转发 (提交给虚拟线程池，防止阻塞 IO 线程)
-        // 假设这里通过 Spring 获取了线程池，或者通过 attribute 传递
-        // vthreadPool.execute(() -> {
+        
         matchedSubscribers.forEach((subscriberChannelId, subscribeQoS) -> {
             // 不转发给自己
             if (subscriberChannelId.equals(ctx.channel().id().asShortText())) {

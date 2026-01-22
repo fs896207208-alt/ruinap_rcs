@@ -1,5 +1,7 @@
 package com.ruinap.adapter.communicate.base;
 
+import com.ruinap.infra.framework.annotation.Component;
+import com.ruinap.infra.framework.annotation.PreDestroy;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
@@ -14,6 +16,7 @@ import io.netty.util.concurrent.DefaultThreadFactory;
  * @author qianye
  * @create 2026-01-22 10:13
  */
+@Component
 public class NettyGlobalResources {
     /**
      * Boss 线程组
@@ -49,6 +52,7 @@ public class NettyGlobalResources {
      * 优雅关闭所有资源
      * 在系统停止时调用
      */
+    @PreDestroy
     public static void shutdown() {
         BOSS_GROUP.shutdownGracefully();
         WORKER_GROUP.shutdownGracefully();

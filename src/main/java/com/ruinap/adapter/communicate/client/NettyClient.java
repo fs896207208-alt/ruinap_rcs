@@ -5,11 +5,11 @@ import cn.hutool.json.JSONObject;
 import com.ruinap.adapter.communicate.base.ClientAttribute;
 import com.ruinap.adapter.communicate.base.IBaseClient;
 import com.ruinap.core.business.AlarmManager;
+import com.ruinap.infra.async.OrderedTaskDispatcher;
 import com.ruinap.infra.config.CoreYaml;
 import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
-import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.Bootstrap;
@@ -35,13 +35,16 @@ import java.util.concurrent.atomic.AtomicLong;
  * @create 2025-05-09 15:23
  */
 public class NettyClient extends SimpleChannelInboundHandler<Object> implements IBaseClient {
+    private final OrderedTaskDispatcher taskDispatcher;
+    private final CoreYaml coreYaml;
+    private final AlarmManager alarmManager;
+    private final VthreadPool vthreadPool;
 
-    @Autowired
-    private CoreYaml coreYaml;
-    @Autowired
-    private AlarmManager alarmManager;
-    @Autowired
-    private VthreadPool vthreadPool;
+    /**
+     * 客户端属性
+     */
+    @Getter
+    private final ClientAttribute attribute;
     /**
      * 存储所有客户端
      */
@@ -53,18 +56,15 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
     private static final Map<String, AtomicInteger> FAILED_COUNTERS = new ConcurrentHashMap<>();
 
     /**
-     * 客户端属性
-     */
-    @Getter
-    private final ClientAttribute attribute;
-
-    /**
      * 构造函数
      *
-     * @param attribute 属性
      */
-    public NettyClient(ClientAttribute attribute) {
+    public NettyClient(ClientAttribute attribute, OrderedTaskDispatcher taskDispatcher, CoreYaml coreYaml, AlarmManager alarmManager, VthreadPool vthreadPool) {
         this.attribute = attribute;
+        this.coreYaml = coreYaml;
+        this.alarmManager = alarmManager;
+        this.taskDispatcher = taskDispatcher;
+        this.vthreadPool = vthreadPool;
     }
 
     /**
@@ -83,7 +83,7 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
             //  调用 Protocol 接口的方法设置子参数
             attribute.getProtocolOption().setChildOption(b);
             // 添加日志处理器
-            //.handler(new LoggingHandler(LogLevel.INFO))
+            //b.handler(new LoggingHandler(LogLevel.INFO));
             b.handler(new ChannelInitializer<SocketChannel>() {
                 @Override
                 protected void initChannel(SocketChannel ch) {
@@ -385,7 +385,7 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
      */
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object frame) throws Exception {
-        vthreadPool.execute(() -> {
+        taskDispatcher.dispatch(clientId, () -> {
             try {
                 // 在虚拟线程中执行耗时的业务 Handler
                 attribute.getHandler().channelRead0(ctx, frame, attribute);
@@ -431,6 +431,7 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
             }
 
             RcsLog.consoleLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "服务器断开连接，上下文已删除");
+            taskDispatcher.unregister(clientId);
             //触发告警
             alarmManager.triggerAlarm(equipmentType + clientId, AlarmCodeEnum.E12003, "rcs");
         }

@@ -12,8 +12,6 @@ import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.enums.netty.ServerRouteEnum;
-import com.ruinap.infra.framework.annotation.Autowired;
-import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.ServerBootstrap;
@@ -21,7 +19,6 @@ import io.netty.channel.*;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
-import lombok.Setter;
 
 import java.util.List;
 import java.util.Map;
@@ -41,41 +38,40 @@ import java.util.concurrent.atomic.AtomicLong;
  * @create 2025-04-24 14:48
  */
 @ChannelHandler.Sharable
-@Component
 public class NettyServer extends SimpleChannelInboundHandler<Object> implements IBaseServer {
-    @Autowired
-    private AlarmManager alarmManager;
-    @Autowired
-    private VthreadPool vthreadPool;
 
+    private final AlarmManager alarmManager;
+    private final VthreadPool vthreadPool;
+    private final ServerHandlerRegistry handlerRegistry;
+
+    /**
+     * 服务端属性
+     */
+    @Getter
+    private final ServerAttribute attribute;
     /**
      * 存储服务端对象
      */
     private static final Map<String, NettyServer> SERVERS = new ConcurrentHashMap<>();
-
     /**
      * 存储服务端路径连接
      */
     @Getter
     private static final Map<String, String> PATHS = new ConcurrentHashMap<>();
-
     /**
      * 存储服务端连接上下文
      */
     @Getter
     private static final Map<String, ChannelHandlerContext> CONTEXTS = new ConcurrentHashMap<>();
-
     /**
      * 存储服务端通道ID
      */
     @Getter
     private static final Map<String, String> CHANNEL_IDS = new ConcurrentHashMap<>();
-
     /**
      * 全局 Map，用于存储服务端 ID 和对应的 CompletableFuture
      */
     private static final Map<String, TypedFuture<?>> FUTURES = new ConcurrentHashMap<>();
-
     /**
      * 存储服务端请求ID
      */
@@ -83,22 +79,18 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
     private static final Map<String, AtomicLong> REQUESTIDS = new ConcurrentHashMap<>();
 
     /**
-     * 服务端属性
-     */
-    @Getter
-    private final ServerAttribute attribute;
-
-    //注入注册中心 (如果是手动 new NettyServer，则需要在 Factory 中传入)
-    @Setter
-    private ServerHandlerRegistry handlerRegistry;
-
-    /**
-     * 服务端构造函数
+     * 服务端构造函数 - [修改说明] 强制注入依赖
      *
-     * @param attribute 属性
+     * @param attribute       属性
+     * @param handlerRegistry 处理器注册表
+     * @param alarmManager    告警管理器
+     * @param vthreadPool     虚拟线程池
      */
-    public NettyServer(ServerAttribute attribute) {
+    public NettyServer(ServerAttribute attribute, ServerHandlerRegistry handlerRegistry, AlarmManager alarmManager, VthreadPool vthreadPool) {
         this.attribute = attribute;
+        this.handlerRegistry = handlerRegistry;
+        this.alarmManager = alarmManager;
+        this.vthreadPool = vthreadPool;
     }
 
     /**
