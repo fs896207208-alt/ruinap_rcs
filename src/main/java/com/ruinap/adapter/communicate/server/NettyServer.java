@@ -43,40 +43,43 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
     private final AlarmManager alarmManager;
     private final VthreadPool vthreadPool;
     private final ServerHandlerRegistry handlerRegistry;
-
     /**
      * 服务端属性
      */
     @Getter
     private final ServerAttribute attribute;
+
+    // ================== 静态注册表 (仅用于查找 Server 实例) ==================
     /**
      * 存储服务端对象
      */
     private static final Map<String, NettyServer> SERVERS = new ConcurrentHashMap<>();
+
+    // ================== 实例级状态 (每个端口独享) ==================
     /**
      * 存储服务端路径连接
      */
     @Getter
-    private static final Map<String, String> PATHS = new ConcurrentHashMap<>();
+    private final Map<String, String> paths = new ConcurrentHashMap<>();
     /**
      * 存储服务端连接上下文
      */
     @Getter
-    private static final Map<String, ChannelHandlerContext> CONTEXTS = new ConcurrentHashMap<>();
+    private final Map<String, ChannelHandlerContext> contexts = new ConcurrentHashMap<>();
     /**
      * 存储服务端通道ID
      */
     @Getter
-    private static final Map<String, String> CHANNEL_IDS = new ConcurrentHashMap<>();
+    private final Map<String, String> channelIds = new ConcurrentHashMap<>();
     /**
      * 全局 Map，用于存储服务端 ID 和对应的 CompletableFuture
      */
-    private static final Map<String, TypedFuture<?>> FUTURES = new ConcurrentHashMap<>();
+    private final Map<String, TypedFuture<?>> futures = new ConcurrentHashMap<>();
     /**
      * 存储服务端请求ID
      */
     @Getter
-    private static final Map<String, AtomicLong> REQUESTIDS = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> requestIds = new ConcurrentHashMap<>();
 
     /**
      * 服务端构造函数 - [修改说明] 强制注入依赖
@@ -102,7 +105,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
      * @param type   期望从CompletableFuture中获取的值的类型
      */
     public <T> void putFuture(String key, CompletableFuture<T> future, Class<T> type) {
-        FUTURES.put(key, new TypedFuture<>(future, type));
+        this.futures.put(key, new TypedFuture<>(future, type));
     }
 
     /**
@@ -117,7 +120,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
      */
     public <T> CompletableFuture<T> removeFuture(String key, Class<T> expectedType) {
         // 从 futures 中移除键对应的 TypedFuture 对象
-        TypedFuture<?> entry = FUTURES.remove(key);
+        TypedFuture<?> entry = this.futures.remove(key);
         // 检查移除的 entry 是否不为空且类型与 expectedType 匹配
         if (entry != null && expectedType.equals(entry.type)) {
             // 类型转换，由于 entry 类型已验证，因此这里抑制警告
@@ -178,11 +181,13 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
      */
     @Override
     public void shutdown() {
-        for (ChannelHandlerContext server : CONTEXTS.values()) {
+        for (ChannelHandlerContext server : this.contexts.values()) {
             server.close();
         }
         attribute.getBossGroup().shutdownGracefully();
     }
+
+    // ================== 静态获取方法 ==================
 
     /**
      * 获取所有服务端
@@ -203,10 +208,11 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         return SERVERS.get(protocolEnum.getProtocol());
     }
 
+    // ================== 业务逻辑 (操作实例变量) ==================
     @Override
     public void sendMessage(String serverId, Object message) {
         // 获取客户端的连接上下文
-        ChannelHandlerContext ctx = CONTEXTS.get(serverId);
+        ChannelHandlerContext ctx = this.contexts.get(serverId);
         if (ctx != null) {
             // 发送消息给客户端
             ctx.writeAndFlush(attribute.getProtocolOption().wrapMessage(message));
@@ -225,7 +231,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
     public <T> CompletableFuture<T> sendMessage(String serverId, Long requestId, T message, Class<T> responseType) {
         CompletableFuture<T> future = new CompletableFuture<>();
 
-        ChannelHandlerContext ctx = CONTEXTS.get(serverId);
+        ChannelHandlerContext ctx = this.contexts.get(serverId);
         if (ctx == null || !ctx.channel().isActive()) {
             RcsLog.communicateOtherLog.error("{} 服务端未连接或通道未激活", serverId);
             future.completeExceptionally(new IllegalStateException("[" + serverId + "] 服务端未连接或通道未激活"));
@@ -242,14 +248,14 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             long timeoutSeconds = 3;
             ScheduledFuture<?> timeoutScheduledFuture = eventLoop.schedule(() -> {
                 if (future.completeExceptionally(new TimeoutException("等待服务端响应超时"))) {
-                    FUTURES.remove(key);
+                    this.futures.remove(key);
                     RcsLog.communicateOtherLog.error("{} {}请求超时", serverId, requestId);
                 }
             }, timeoutSeconds, TimeUnit.SECONDS);
 
             future.whenComplete((res, ex) -> {
                 timeoutScheduledFuture.cancel(false);
-                FUTURES.remove(key);
+                this.futures.remove(key);
             });
 
             ctx.writeAndFlush(attribute.getProtocolOption().wrapMessage(message)).addListener(f -> {
@@ -259,7 +265,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             });
 
         } catch (Exception e) {
-            FUTURES.remove(key);
+            this.futures.remove(key);
             String errorMsg = String.format("消息发送异常: %s", e.getMessage());
             RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), serverId, errorMsg);
             future.completeExceptionally(new RuntimeException(errorMsg, e));
@@ -274,15 +280,20 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
      * @param message   消息
      */
     public static void sendMessageAll(ProtocolEnum protocolEnum, ServerRouteEnum routeEnum, Object message) {
-        for (Map.Entry<String, String> entry : PATHS.entrySet()) {
+        // 1. 获取对应的 Server 实例
+        NettyServer server = getServer(protocolEnum);
+        if (server == null) {
+            RcsLog.consoleLog.warn("未找到协议 [{}] 对应的服务端实例", protocolEnum);
+            return;
+        }
+
+        // 2. 遍历该实例的连接
+        for (Map.Entry<String, String> entry : server.getPaths().entrySet()) {
             String serverId = entry.getKey();
             String route = entry.getValue();
             if (route.equalsIgnoreCase(routeEnum.getRoute())) {
-                // 获取客户端的连接上下文
-                ChannelHandlerContext ctx = CONTEXTS.get(serverId);
+                ChannelHandlerContext ctx = server.getContexts().get(serverId);
                 if (ctx != null) {
-                    NettyServer server = NettyServer.getServer(protocolEnum);
-                    // 发送消息给客户端
                     ctx.writeAndFlush(server.getAttribute().getProtocolOption().wrapMessage(message));
                 }
             }
@@ -322,10 +333,10 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
                 String id = channel.id().toString();
                 String serverId = channel.attr(AttributeKeyEnum.SERVER_ID.key()).get();
                 //添加到服务端列表
-                CONTEXTS.putIfAbsent(serverId, ctx);
-                PATHS.putIfAbsent(serverId, path);
-                CHANNEL_IDS.putIfAbsent(id, serverId);
-                REQUESTIDS.putIfAbsent(serverId, new AtomicLong(0));
+                this.contexts.putIfAbsent(serverId, ctx);
+                this.paths.putIfAbsent(serverId, path);
+                this.channelIds.putIfAbsent(id, serverId);
+                this.requestIds.putIfAbsent(serverId, new AtomicLong(0));
                 //记录日志
                 RcsLog.consoleLog.info("{} 服务端连接成功", serverId);
             }
@@ -391,11 +402,11 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         String serverId = channel.attr(AttributeKeyEnum.SERVER_ID.key()).get();
         // 从 Channel 中获取服务端ID
         String id = channel.id().toString();
-        if (CHANNEL_IDS.containsKey(id)) {
-            CHANNEL_IDS.remove(id);
-            CONTEXTS.remove(serverId);
-            PATHS.remove(serverId);
-            REQUESTIDS.remove(serverId);
+        if (this.channelIds.containsKey(id)) {
+            this.channelIds.remove(id);
+            this.contexts.remove(serverId);
+            this.paths.remove(serverId);
+            this.requestIds.remove(serverId);
             RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接并清理资源", serverId));
         } else {
             RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接", serverId));

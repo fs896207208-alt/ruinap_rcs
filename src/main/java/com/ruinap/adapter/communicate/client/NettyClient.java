@@ -53,7 +53,7 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
     /**
      * 存储连接失败计数器
      */
-    private static final Map<String, AtomicInteger> FAILED_COUNTERS = new ConcurrentHashMap<>();
+    private final AtomicInteger failedCounter = new AtomicInteger(0);
 
     /**
      * 构造函数
@@ -320,7 +320,7 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
         //如果客户端ID不为空，则记录客户端上下文
         if (clientId != null && !clientId.isEmpty()) {
             //重置连接失败计数器
-            FAILED_COUNTERS.put(clientId, new AtomicInteger(0));
+            this.failedCounter.set(0);
             //添加到客户端列表
             String key = StrUtil.format("{}_{}", attribute.getEquipmentType().getEquipmentType(), clientId);
             CLIENTS.put(key, this);
@@ -355,7 +355,7 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
                 Channel channel = ctx.channel();
                 String clientId = channel.attr(AttributeKeyEnum.CLIENT_ID.key()).get();
                 //重置连接失败计数器
-                FAILED_COUNTERS.put(clientId, new AtomicInteger(0));
+                int count = this.failedCounter.incrementAndGet();
                 //添加到客户端列表
                 String key = attribute.getEquipmentType().getEquipmentType() + "_" + clientId;
                 CLIENTS.put(key, this);
@@ -385,7 +385,7 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
      */
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object frame) throws Exception {
-        taskDispatcher.dispatch(clientId, () -> {
+        taskDispatcher.dispatch(attribute.getClientId(), () -> {
             try {
                 // 在虚拟线程中执行耗时的业务 Handler
                 attribute.getHandler().channelRead0(ctx, frame, attribute);
@@ -454,24 +454,37 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
         // 从 Channel 的 Attribute 中获取客户端 ID
         Channel channel = ctx.channel();
         String protocol = channel.attr(AttributeKeyEnum.PROTOCOL.key()).get();
-        String clientId = channel.attr(AttributeKeyEnum.CLIENT_ID.key()).get();
+        String clientId = attribute.getClientId();
         String equipmentType = attribute.getEquipmentType().getEquipmentType();
 
         //获取连接失败计数器
-        FAILED_COUNTERS.computeIfAbsent(clientId, k -> new AtomicInteger(0));
-        int failedCount = FAILED_COUNTERS.get(clientId).incrementAndGet();
-        //记录日志
+        int count = this.failedCounter.incrementAndGet();
+
+        // 记录日志
+        String logMsg = StrUtil.format("Channel 注销, 当前累计重试次数: {}", count);
         if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
-            RcsLog.communicateLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "Channel 从客户端的 EventLoop 中注销，注销次数:" + failedCount);
+            RcsLog.communicateLog.warn(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, logMsg);
         } else {
-            RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "Channel 从客户端的 EventLoop 中注销，注销次数:" + failedCount);
+            RcsLog.communicateOtherLog.warn(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, logMsg);
         }
 
-        if (failedCount >= Integer.parseInt(attribute.getMaxConnectFailed())) {
-            //回调连接失败结果
+        // 判断是否超过最大重试次数
+        int maxRetries = 0;
+        try {
+            maxRetries = Integer.parseInt(attribute.getMaxConnectFailed());
+        } catch (NumberFormatException e) {
+            // 默认值兜底
+            maxRetries = 3;
+        }
+
+        if (count >= maxRetries) {
+            RcsLog.consoleLog.error("达到最大重连次数 ({})，触发连接失败回调: {}", maxRetries, clientId);
+
+            // 回调连接失败结果
             attribute.getHandler().connectionFailed(null, attribute);
-            //重置连接失败计数器
-            FAILED_COUNTERS.put(clientId, new AtomicInteger(0));
+
+            // 重置计数器，以免下次连接时直接报错
+            this.failedCounter.set(0);
         }
 
         //调用事件处理器方法
