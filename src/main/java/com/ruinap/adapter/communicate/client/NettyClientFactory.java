@@ -44,9 +44,10 @@ public class NettyClientFactory {
      */
     private static final Map<ProtocolEnum, IProtocolOption> PROTOCOL_OPTION_MAP = new HashMap<>();
     /**
-     * 协议处理器
+     * 协议处理器工厂
+     * 作用：存储的是“生产 Handler 的工厂方法”，而不是 Handler 实例本身
      */
-    private static final Map<LinkEquipmentTypeEnum, ClientHandler> PROTOCOL_HANDLER_MAP = new HashMap<>();
+    private static final Map<LinkEquipmentTypeEnum, Supplier<ClientHandler>> PROTOCOL_HANDLER_FACTORY = new HashMap<>();
 
     static {
         // 初始化协议选项
@@ -54,9 +55,9 @@ public class NettyClientFactory {
         PROTOCOL_OPTION_MAP.put(ProtocolEnum.TCP_CLIENT, new TcpOption());
 
         // 初始化协议处理器
-        PROTOCOL_HANDLER_MAP.put(LinkEquipmentTypeEnum.AGV, new WebSocketClientHandler());
-        PROTOCOL_HANDLER_MAP.put(LinkEquipmentTypeEnum.TRANSFER, new WebSocketClientHandler());
-        PROTOCOL_HANDLER_MAP.put(LinkEquipmentTypeEnum.CHARGE_PILE, new TcpClientHandler());
+        PROTOCOL_HANDLER_FACTORY.put(LinkEquipmentTypeEnum.AGV, WebSocketClientHandler::new);
+        PROTOCOL_HANDLER_FACTORY.put(LinkEquipmentTypeEnum.TRANSFER, WebSocketClientHandler::new);
+        PROTOCOL_HANDLER_FACTORY.put(LinkEquipmentTypeEnum.CHARGE_PILE, TcpClientHandler::new);
     }
 
     /**
@@ -122,9 +123,10 @@ public class NettyClientFactory {
                 RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "AGV配置的设备种类 [" + equipmentType + "] 获取不到枚举数据");
                 continue;
             }
-            ClientHandler clientHandler = PROTOCOL_HANDLER_MAP.get(linkEquipmentTypeEnum);
-            if (clientHandler == null) {
-                RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "AGV配置的设备种类 [" + linkEquipmentTypeEnum + "] 获取不到处理器数据");
+
+            Supplier<ClientHandler> handlerSupplier = PROTOCOL_HANDLER_FACTORY.get(linkEquipmentTypeEnum);
+            if (handlerSupplier == null) {
+                RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "AGV配置的设备种类 [" + linkEquipmentTypeEnum + "] 获取不到处理器工厂");
                 continue;
             }
 
@@ -155,7 +157,8 @@ public class NettyClientFactory {
 
                 // 创建任务生成器
                 Supplier<CompletableFuture<Void>> taskSupplier = asyncService.runAsync(() -> {
-                    startClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, clientHandler);
+                    // 注意这里：handlerSupplier.get()
+                    startClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get());
                 });
                 // 添加任务
                 tasks.add(taskSupplier);

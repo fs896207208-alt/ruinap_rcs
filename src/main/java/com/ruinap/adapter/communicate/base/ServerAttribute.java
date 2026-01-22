@@ -13,7 +13,6 @@ import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -32,8 +31,6 @@ public class ServerAttribute {
 
     @Autowired
     private VthreadPool vthreadPool;
-    @Autowired
-    private SharableAttribute sharableAttribute;
 
     /**
      * 路径处理器映射表
@@ -68,11 +65,12 @@ public class ServerAttribute {
     /**
      * 主线程组，处理连接请求
      */
-    private final EventLoopGroup bossGroup = new NioEventLoopGroup(2, vthreadPool.getDaemonThread("sbvt-"));
+    private final EventLoopGroup bossGroup = NettyGlobalResources.getBossGroup();
     /**
      * 工作线程组，处理I/O操作
+     * 默认CPU核心数*2
      */
-    private EventLoopGroup workerGroup = sharableAttribute.getWorkerGroup();
+    private EventLoopGroup workerGroup = NettyGlobalResources.getWorkerGroup();
 
     /**
      * 事件处理器

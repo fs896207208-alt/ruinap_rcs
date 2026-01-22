@@ -5,7 +5,6 @@ import com.ruinap.adapter.communicate.client.NettyClient;
 import com.ruinap.adapter.communicate.client.handler.ClientHandler;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
-import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.bootstrap.Bootstrap;
@@ -31,8 +30,6 @@ import java.util.concurrent.atomic.AtomicLong;
 @Getter
 @Component
 public class ClientAttribute {
-    @Autowired
-    private SharableAttribute sharableAttribute;
 
     /**
      * WebSocket 服务器地址
@@ -61,7 +58,7 @@ public class ClientAttribute {
     /**
      * 工作线程组，处理I/O操作
      */
-    private EventLoopGroup workerGroup = sharableAttribute.workerGroup;
+    private EventLoopGroup workerGroup = NettyGlobalResources.getWorkerGroup();
     /**
      * 客户端处理器
      */
