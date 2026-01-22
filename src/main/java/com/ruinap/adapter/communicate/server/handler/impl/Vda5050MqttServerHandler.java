@@ -145,58 +145,57 @@ public class Vda5050MqttServerHandler implements IServerHandler {
         ByteBuf payload = msg.payload();
         MqttQoS publishQoS = msg.fixedHeader().qosLevel();
 
-        // 根据QoS级别回复确认
+        // 1. 协议响应 (保持在 IO 线程，快速响应)
         if (publishQoS == MqttQoS.AT_LEAST_ONCE) {
             sendPubAck(ctx, msg.variableHeader().packetId());
         } else if (publishQoS == MqttQoS.EXACTLY_ONCE) {
             sendPubRec(ctx, msg.variableHeader().packetId());
         }
 
-        // 查找订阅该主题的所有客户端
+        // 2. 查找订阅者
         Map<String, MqttQoS> matchedSubscribers = TOPIC_TRIE.match(topicName);
         if (matchedSubscribers.isEmpty()) {
             return;
         }
 
-        // 增加引用计数，防止Netty在当前方法结束后自动释放Payload，导致异步发送时访问空指针
-        ByteBuf broadcastPayload = payload.retain();
+        // 3. 深拷贝 Payload
+        // 将 ByteBuf 数据读取到普通的 byte 数组中
+        // 这样就彻底解耦了 Netty 的内存管理，后续可以安全地在任何线程使用
+        byte[] dataCopy = new byte[payload.readableBytes()];
+        payload.getBytes(payload.readerIndex(), dataCopy);
 
-        try {
-            matchedSubscribers.forEach((subscriberChannelId, subscribeQoS) -> {
-                // 不转发给发送者自己
-                if (subscriberChannelId.equals(ctx.channel().id().asShortText())) {
-                    return;
-                }
-
-                ChannelHandlerContext subCtx = NettyServer.getCONTEXTS().get(subscriberChannelId);
-                if (subCtx != null && subCtx.channel().isActive()) {
-                    // 转发消息QoS降级处理
-                    MqttQoS finalQoS = (publishQoS.value() < subscribeQoS.value()) ? publishQoS : subscribeQoS;
-
-                    // 创建Payload的切片视图，实现零拷贝，同时增加引用计数
-                    ByteBuf outgoingPayload = broadcastPayload.retainedDuplicate();
-
-                    MqttFixedHeader fixedHeader = new MqttFixedHeader(
-                            MqttMessageType.PUBLISH, false, finalQoS, false, 0
-                    );
-                    MqttPublishVariableHeader variableHeader = new MqttPublishVariableHeader(topicName, getNewPacketId());
-                    MqttPublishMessage publishMessage = new MqttPublishMessage(fixedHeader, variableHeader, outgoingPayload);
-
-                    subCtx.writeAndFlush(publishMessage).addListener(future -> {
-                        if (!future.isSuccess()) {
-                            RcsLog.consoleLog.error("转发消息给 [{}] 失败: {}", subscriberChannelId, future.cause().getMessage());
-                        }
-                    });
-                }
-            });
-        } finally {
-            // 释放手动retain的引用计数
-            // 如果成功发送，retainedDuplicate会由Netty的writeAndFlush负责release
-            // 这里的release是为了平衡掉broadcastPayload = payload.retain()
-            if (broadcastPayload.refCnt() > 0) {
-                broadcastPayload.release();
+        // 4. 异步转发 (提交给虚拟线程池，防止阻塞 IO 线程)
+        // 假设这里通过 Spring 获取了线程池，或者通过 attribute 传递
+        // vthreadPool.execute(() -> {
+        matchedSubscribers.forEach((subscriberChannelId, subscribeQoS) -> {
+            // 不转发给自己
+            if (subscriberChannelId.equals(ctx.channel().id().asShortText())) {
+                return;
             }
-        }
+
+            ChannelHandlerContext subCtx = NettyServer.getCONTEXTS().get(subscriberChannelId);
+            if (subCtx != null && subCtx.channel().isActive()) {
+                MqttQoS finalQoS = (publishQoS.value() < subscribeQoS.value()) ? publishQoS : subscribeQoS;
+
+                //为每个接收者创建一个新的 Unpooled Buffer
+                // Unpooled.wrappedBuffer 也是零拷贝的一种，它包装了 byte[]
+                ByteBuf outgoingPayload = io.netty.buffer.Unpooled.wrappedBuffer(dataCopy);
+
+                MqttFixedHeader fixedHeader = new MqttFixedHeader(
+                        MqttMessageType.PUBLISH, false, finalQoS, false, 0
+                );
+                MqttPublishVariableHeader variableHeader = new MqttPublishVariableHeader(topicName, getNewPacketId());
+
+                // 创建新的消息对象
+                MqttPublishMessage publishMessage = new MqttPublishMessage(fixedHeader, variableHeader, outgoingPayload);
+
+                subCtx.writeAndFlush(publishMessage).addListener(future -> {
+                    if (!future.isSuccess()) {
+                        RcsLog.consoleLog.error("转发失败: {}", future.cause().getMessage());
+                    }
+                });
+            }
+        });
     }
 
     /**

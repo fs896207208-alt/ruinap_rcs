@@ -11,6 +11,7 @@ import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.log.RcsLog;
+import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
@@ -39,6 +40,8 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
     private CoreYaml coreYaml;
     @Autowired
     private AlarmManager alarmManager;
+    @Autowired
+    private VthreadPool vthreadPool;
     /**
      * 存储所有客户端
      */
@@ -382,7 +385,16 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
      */
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object frame) throws Exception {
-        attribute.getHandler().channelRead0(ctx, frame, attribute);
+        vthreadPool.execute(() -> {
+            try {
+                // 在虚拟线程中执行耗时的业务 Handler
+                attribute.getHandler().channelRead0(ctx, frame, attribute);
+            } catch (Exception e) {
+                // 捕获业务异常，防止线程静默退出
+                RcsLog.communicateLog.error("客户端业务处理异常", e);
+                attribute.getHandler().exceptionCaught(ctx, e, attribute);
+            }
+        });
     }
 
     /**

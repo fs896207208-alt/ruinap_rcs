@@ -6,6 +6,7 @@ import com.ruinap.adapter.communicate.base.IBaseServer;
 import com.ruinap.adapter.communicate.base.ServerAttribute;
 import com.ruinap.adapter.communicate.base.TypedFuture;
 import com.ruinap.adapter.communicate.server.handler.IServerHandler;
+import com.ruinap.adapter.communicate.server.registry.ServerHandlerRegistry;
 import com.ruinap.core.business.AlarmManager;
 import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
@@ -14,11 +15,13 @@ import com.ruinap.infra.enums.netty.ServerRouteEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
+import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
+import lombok.Setter;
 
 import java.util.List;
 import java.util.Map;
@@ -42,6 +45,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class NettyServer extends SimpleChannelInboundHandler<Object> implements IBaseServer {
     @Autowired
     private AlarmManager alarmManager;
+    @Autowired
+    private VthreadPool vthreadPool;
 
     /**
      * 存储服务端对象
@@ -82,6 +87,10 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
      */
     @Getter
     private final ServerAttribute attribute;
+
+    //注入注册中心 (如果是手动 new NettyServer，则需要在 Factory 中传入)
+    @Setter
+    private ServerHandlerRegistry handlerRegistry;
 
     /**
      * 服务端构造函数
@@ -305,7 +314,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         // 从 Channel 的 AttributeKey 中获取服务端路径
         String path = channel.attr(AttributeKeyEnum.PATH.key()).get();
         //获取事件处理器
-        IServerHandler serverEventHandler = ServerAttribute.ROUTES.get(this.attribute.getProtocol().getProtocol() + path);
+        IServerHandler serverEventHandler = handlerRegistry.getHandler(attribute.getProtocol(), path);
         if (serverEventHandler == null) {
             ctx.close();
             RcsLog.consoleLog.error("Netty 服务器未找到匹配路径的处理器: " + this.attribute.getProtocol().getProtocol() + path);
@@ -351,15 +360,24 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         if (path == null) {
             path = "";
         }
+
         //获取事件处理器
-        IServerHandler serverEventHandler = ServerAttribute.ROUTES.get(this.attribute.getProtocol().getProtocol() + path);
+        IServerHandler serverEventHandler = handlerRegistry.getHandler(attribute.getProtocol(), path);
         if (serverEventHandler == null) {
             ctx.close();
             RcsLog.consoleLog.error("Netty 服务器未找到匹配路径的处理器: " + this.attribute.getProtocol().getProtocol() + path);
             return;
         }
+
+        // 将业务逻辑提交给虚拟线程池，释放 IO 线程
         //  调用事件处理器的 channelRead0 方法
-        serverEventHandler.channelRead0(ctx, frame, attribute);
+        vthreadPool.execute(() -> {
+            try {
+                serverEventHandler.channelRead0(ctx, frame, attribute);
+            } catch (Exception e) {
+                exceptionCaught(ctx, e);
+            }
+        });
     }
 
     /**
@@ -397,7 +415,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         }
 
         //获取事件处理器
-        IServerHandler serverEventHandler = ServerAttribute.ROUTES.get(this.attribute.getProtocol().getProtocol() + path);
+        IServerHandler serverEventHandler = handlerRegistry.getHandler(attribute.getProtocol(), path);
         if (serverEventHandler == null) {
             ctx.close();
             RcsLog.consoleLog.error("Netty 服务器未找到匹配路径的处理器: " + this.attribute.getProtocol().getProtocol() + path);
@@ -431,7 +449,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         RcsLog.consoleLog.error("{} server_error {}", serverId, cause.getMessage());
 
         //获取事件处理器
-        IServerHandler serverEventHandler = ServerAttribute.ROUTES.get(this.attribute.getProtocol().getProtocol() + path);
+        IServerHandler serverEventHandler = handlerRegistry.getHandler(attribute.getProtocol(), path);
         if (serverEventHandler == null) {
             ctx.close();
             RcsLog.consoleLog.error("Netty 服务器未找到匹配路径的处理器: " + this.attribute.getProtocol().getProtocol() + path);
