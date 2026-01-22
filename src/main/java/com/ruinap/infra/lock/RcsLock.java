@@ -147,6 +147,8 @@ public abstract class RcsLock {
     /**
      * 乐观读 (Optimistic Read) - 极致性能
      * <p>
+     * 只有StampedLock支持乐观读，其他锁实现均直接转为悲观读锁。
+     * <p>
      * <b>原理：</b> 先假设没有锁冲突直接读数据，读完后校验版本号（Stamp）。
      * 如果校验失败（说明读期间有写入发生），则执行 fallback 逻辑（通常是升级为悲观读锁）。
      * </p>

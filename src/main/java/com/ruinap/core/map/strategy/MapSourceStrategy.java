@@ -11,9 +11,9 @@ import java.util.Map;
  */
 public interface MapSourceStrategy {
     /**
-     * 获取地图对象
+     * 获取地图 json 字符串
      *
-     * @return 地图对象
+     * @return 地图 json 字符串
      */
     Map<Integer, String> loadRawData();
 }

@@ -3,6 +3,7 @@ package com.ruinap.infra.framework.util;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.ApplicationContextAware;
+import com.ruinap.infra.framework.core.event.ApplicationEvent;
 import com.ruinap.infra.log.RcsLog;
 
 /**
@@ -102,5 +103,23 @@ public class SpringContextHolder implements ApplicationContextAware {
             return null;
         }
         return context.getBean(requiredType);
+    }
+
+    /**
+     * 发布事件
+     * <p>
+     * 允许 POJO（如 RcsPointOccupy）、工具类等非 Bean 对象直接向 Spring 容器发布事件。
+     * </p>
+     *
+     * @param event 事件对象 (必须继承 ApplicationEvent)
+     */
+    public static void publishEvent(ApplicationEvent event) {
+        if (context == null) {
+            // 防御性编程：容器未就绪时，记录警告日志，避免抛出空指针中断业务流程
+            // 在地图加载初期或单元测试中，这种情况可能发生
+            RcsLog.consoleLog.warn("SpringContextHolder 容器未初始化，无法发布事件: {}", event);
+            return;
+        }
+        context.publishEvent(event);
     }
 }

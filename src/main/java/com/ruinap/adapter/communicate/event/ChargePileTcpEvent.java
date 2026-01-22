@@ -3,8 +3,12 @@ package com.ruinap.adapter.communicate.event;
 
 import com.ruinap.adapter.communicate.base.ClientAttribute;
 import com.ruinap.adapter.communicate.base.event.AbstractClientEvent;
+import com.ruinap.core.equipment.manager.ChargePileManager;
 import com.ruinap.core.equipment.pojo.RcsChargePile;
+import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
+import com.ruinap.infra.util.BaseConversionUtils;
 
 import java.util.List;
 
@@ -14,7 +18,10 @@ import java.util.List;
  * @author qianye
  * @create 2025-09-27 15:00
  */
+@Component
 public class ChargePileTcpEvent extends AbstractClientEvent<byte[]> {
+    @Autowired
+    private ChargePileManager chargePileManager;
 
     /**
      * 接收消息
@@ -34,7 +41,7 @@ public class ChargePileTcpEvent extends AbstractClientEvent<byte[]> {
         // 请求ID
         long requestId = attribute.getRequestId().incrementAndGet();
         // 记录日志
-        RcsLog.communicateLog.error(RcsLog.formatTemplate(clientId, "rec_data", requestId, datas));
+        RcsLog.communicateLog.error(RcsLog.getTemplate(5), RcsLog.randomInt(), clientId, "rec_data", requestId, datas);
 
         //获取充电桩输出电压
         String hexVoltage = String.join("", datas.subList(2, 4));
@@ -50,7 +57,7 @@ public class ChargePileTcpEvent extends AbstractClientEvent<byte[]> {
         String binaryhexError = BaseConversionUtils.hexStringToDecimal(hexError);
 
         //获取充电桩信息
-        RcsChargePile rcsChargePile = DbCache.RCS_CHARGE_MAP.get(clientId);
+        RcsChargePile rcsChargePile = chargePileManager.chargeCache.get(clientId);
         if (rcsChargePile != null) {
             //模式 -1离线 0自动 1手动
             int mode = -1;

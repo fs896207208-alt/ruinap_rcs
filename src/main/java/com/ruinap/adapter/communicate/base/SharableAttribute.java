@@ -3,6 +3,7 @@ package com.ruinap.adapter.communicate.base;
 import com.ruinap.adapter.communicate.client.NettyClient;
 import com.ruinap.adapter.communicate.server.NettyServer;
 import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.thread.VthreadPool;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -17,6 +18,7 @@ import java.util.List;
  * @create 2025-04-24 16:04
  */
 @Data
+@Component
 public class SharableAttribute {
 
     @Autowired

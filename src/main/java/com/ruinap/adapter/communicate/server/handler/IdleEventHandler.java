@@ -18,7 +18,7 @@ public class IdleEventHandler extends ChannelInboundHandlerAdapter {
         if (evt instanceof IdleStateEvent event) {
             if (event.state() == IdleState.READER_IDLE || event.state() == IdleState.WRITER_IDLE || event.state() == IdleState.ALL_IDLE) {
                 // 如果客户端长时间没有读数据，认为客户端已断开，关闭连接
-                RcsLog.consoleLog.warn(RcsLog.formatTemplate("客户端长时间未发送数据，关闭连接：" + ctx.channel().remoteAddress()));
+                RcsLog.consoleLog.warn("客户端长时间未发送数据，关闭连接：{}", ctx.channel().remoteAddress());
                 ctx.close(); // 关闭连接
             }
         } else {

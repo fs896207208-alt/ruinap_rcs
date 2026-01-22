@@ -157,10 +157,25 @@ public class AlarmManager {
 
     // ==================== 重载便捷方法 ====================
 
+    /**
+     * 触发/上报告警
+     *
+     * @param equipmentCode 设备编号
+     * @param alarmEnum     告警枚举
+     * @param param         告警参数
+     * @param source        告警来源
+     */
     public void triggerAlarm(String equipmentCode, AlarmCodeEnum alarmEnum, String param, String source) {
         triggerAlarm(equipmentCode, null, null, alarmEnum, param, source);
     }
 
+    /**
+     * 触发/上报告警
+     *
+     * @param equipmentCode 设备编号
+     * @param alarmEnum     告警枚举
+     * @param source        告警来源
+     */
     public void triggerAlarm(String equipmentCode, AlarmCodeEnum alarmEnum, String source) {
         triggerAlarm(equipmentCode, null, null, alarmEnum, null, source);
     }

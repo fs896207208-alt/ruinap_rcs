@@ -35,7 +35,7 @@ public class DefaultWebSocketServerHandler implements IServerHandler {
                     ctx.writeAndFlush(new TextWebSocketFrame("服务端 [" + serverId + "] 已连接到系统，因此你的连接被拒绝"))
                             .addListener(future -> {
                                 if (future.isSuccess()) {
-                                    RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(serverId, "服务端已连接到系统，因此你的连接被拒绝"));
+                                    RcsLog.consoleLog.error("{} 服务端已连接到系统，因此你的连接被拒绝", serverId);
                                     ctx.close();
                                 } else {
                                     // 将异常传递给 exceptionCaught

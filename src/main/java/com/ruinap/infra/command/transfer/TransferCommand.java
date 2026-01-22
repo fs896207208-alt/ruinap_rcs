@@ -1,10 +1,8 @@
 package com.ruinap.infra.command.transfer;
 
-import cn.hutool.core.date.DatePattern;
-import cn.hutool.core.date.DateUtil;
-import cn.hutool.json.JSONObject;
-
-import java.util.Date;
+import com.ruinap.infra.util.CachedTimeUtils;
+import com.ruinap.infra.util.FastJsonBuilder;
+import io.netty.buffer.ByteBuf;
 
 /**
  * 调度中转指令库
@@ -14,202 +12,174 @@ import java.util.Date;
  */
 public class TransferCommand {
 
+    // =========================================================
+    // 1. 自动门 (Auto Door)
+    // =========================================================
+
     /**
-     * 查询自动门状态
+     * 获取自动门状态
      *
+     * @param out           指令字节流
      * @param equipmentCode 设备编号
-     * @param requestId     请求ID
-     * @return 指令
+     * @param requestId     请求编号
      */
-    public static JSONObject getAutoDoorState(String equipmentCode, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "door_state");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("data", "");
-        jsonObject.set("equipment_code", equipmentCode);
-        return jsonObject;
+    public static void writeGetAutoDoorState(ByteBuf out, String equipmentCode, Long requestId) {
+        writeCommonCommand(out, equipmentCode, requestId, "door_state");
     }
 
     /**
      * 打开自动门
      *
+     * @param out           指令字节流
      * @param equipmentCode 设备编号
-     * @param requestId     请求ID
-     * @return 指令
+     * @param requestId     请求编号
      */
-    public static JSONObject openAutoDoor(String equipmentCode, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "open_auto_door");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("equipment_code", equipmentCode);
-        return jsonObject;
+    public static void writeOpenAutoDoor(ByteBuf out, String equipmentCode, Long requestId) {
+        writeCommonCommand(out, equipmentCode, requestId, "open_auto_door");
     }
 
     /**
-     * 关门自动门
+     * 关闭自动门
      *
+     * @param out           指令字节流
      * @param equipmentCode 设备编号
-     * @param requestId     请求ID
-     * @return 指令
+     * @param requestId     请求编号
      */
-    public static JSONObject closeAutoDoor(String equipmentCode, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "close_auto_door");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("equipment_code", equipmentCode);
-        return jsonObject;
+    public static void writeCloseAutoDoor(ByteBuf out, String equipmentCode, Long requestId) {
+        writeCommonCommand(out, equipmentCode, requestId, "close_auto_door");
     }
 
+    // =========================================================
+    // 2. 输送线 (Conveyor)
+    // =========================================================
+
     /**
-     * 查询输送线状态
+     * 获取输送线状态
      *
+     * @param out            指令字节流
      * @param equipmentCode  设备编号
      * @param relevancyPoint 关联点位
-     * @param requestId      请求ID
-     * @return 指令
+     * @param requestId      请求编号
      */
-    public static JSONObject getConveyorLineState(String equipmentCode, String relevancyPoint, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "conveyor_state");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("data", "");
-        jsonObject.set("equipment_code", equipmentCode);
-        jsonObject.set("relevancy_point", relevancyPoint);
-        return jsonObject;
+    public static void writeGetConveyorLineState(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
+        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_state", relevancyPoint);
     }
 
     /**
-     * 设置取货中
+     * 设置输送线装载中
      *
+     * @param out            指令字节流
      * @param equipmentCode  设备编号
      * @param relevancyPoint 关联点位
-     * @param requestId      请求ID
-     * @return 指令
+     * @param requestId      请求编号
      */
-    public static JSONObject setLoad(String equipmentCode, String relevancyPoint, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "conveyor_load");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("data", "");
-        jsonObject.set("equipment_code", equipmentCode);
-        jsonObject.set("relevancy_point", relevancyPoint);
-        return jsonObject;
+    public static void writeSetLoad(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
+        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_load", relevancyPoint);
     }
 
     /**
-     * 设置取货完成
+     * 确认装载完成
      *
+     * @param out            指令字节流
      * @param equipmentCode  设备编号
      * @param relevancyPoint 关联点位
-     * @param requestId      请求ID
-     * @return 指令
+     * @param requestId      请求编号
      */
-    public static JSONObject setLoadFinish(String equipmentCode, String relevancyPoint, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "conveyor_load_finish");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("data", "");
-        jsonObject.set("equipment_code", equipmentCode);
-        jsonObject.set("relevancy_point", relevancyPoint);
-        return jsonObject;
+    public static void writeSetLoadFinish(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
+        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_load_finish", relevancyPoint);
     }
 
     /**
-     * 设置取货取消
+     * 取消装载
      *
+     * @param out            指令字节流
      * @param equipmentCode  设备编号
      * @param relevancyPoint 关联点位
-     * @param requestId      请求ID
-     * @return 指令
+     * @param requestId      请求编号
      */
-    public static JSONObject cancelLoad(String equipmentCode, String relevancyPoint, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "conveyor_load_cancel");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("data", "");
-        jsonObject.set("equipment_code", equipmentCode);
-        jsonObject.set("relevancy_point", relevancyPoint);
-        return jsonObject;
+    public static void writeCancelLoad(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
+        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_load_cancel", relevancyPoint);
     }
 
     /**
-     * 设置放货中
+     * 设置输送线卸载中
      *
+     * @param out            指令字节流
      * @param equipmentCode  设备编号
      * @param relevancyPoint 关联点位
-     * @param requestId      请求ID
-     * @return 指令
+     * @param requestId      请求编号
      */
-    public static JSONObject setUnLoad(String equipmentCode, String relevancyPoint, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "conveyor_line_unload");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("data", "");
-        jsonObject.set("equipment_code", equipmentCode);
-        jsonObject.set("relevancy_point", relevancyPoint);
-        return jsonObject;
+    public static void writeSetUnLoad(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
+        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_line_unload", relevancyPoint);
     }
 
     /**
-     * 设置放货完成
+     * 确认卸载完成
      *
+     * @param out            指令字节流
      * @param equipmentCode  设备编号
      * @param relevancyPoint 关联点位
-     * @param requestId      请求ID
-     * @return 指令
+     * @param requestId      请求编号
      */
-    public static JSONObject setUnLoadFinish(String equipmentCode, String relevancyPoint, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "conveyor_unload_finish");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("data", "");
-        jsonObject.set("equipment_code", equipmentCode);
-        jsonObject.set("relevancy_point", relevancyPoint);
-        return jsonObject;
+    public static void writeSetUnLoadFinish(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
+        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_unload_finish", relevancyPoint);
     }
 
     /**
-     * 设置放货取消
+     * 取消卸载
      *
+     * @param out            指令字节流
      * @param equipmentCode  设备编号
      * @param relevancyPoint 关联点位
-     * @param requestId      请求ID
-     * @return 指令
+     * @param requestId      请求编号
      */
-    public static JSONObject cancelUnLoad(String equipmentCode, String relevancyPoint, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "conveyor_unload_cancel");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("data", "");
-        jsonObject.set("equipment_code", equipmentCode);
-        jsonObject.set("relevancy_point", relevancyPoint);
-        return jsonObject;
+    public static void writeCancelUnLoad(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
+        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_unload_cancel", relevancyPoint);
     }
 
+    // =========================================================
+    // 3. 风淋室 (Air Shower)
+    // =========================================================
+
     /**
-     * 查询风淋室状态
+     * 获取风淋室状态
      *
+     * @param out           指令字节流
      * @param equipmentCode 设备编号
-     * @param requestId     请求ID
-     * @return 指令
+     * @param requestId     请求编号
      */
-    public static JSONObject getAirShowerState(String equipmentCode, Long requestId) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("time", DateUtil.format(new Date(), DatePattern.NORM_DATETIME_MS_FORMAT));
-        jsonObject.set("event", "airShower_state");
-        jsonObject.set("request_id", requestId);
-        jsonObject.set("data", "");
-        jsonObject.set("equipment_code", equipmentCode);
-        return jsonObject;
+    public static void writeGetAirShowerState(ByteBuf out, String equipmentCode, Long requestId) {
+        writeCommonCommand(out, equipmentCode, requestId, "airShower_state");
+    }
+
+    // =========================================================
+    // 私有通用方法 (复用逻辑)
+    // =========================================================
+
+    /**
+     * 通用指令写入器
+     */
+    private static void writeCommonCommand(ByteBuf out, String equipmentCode, Long requestId, String event) {
+        new FastJsonBuilder(out)
+                .set("date_time", CachedTimeUtils.getNowStringWithMillis())
+                .set("event", event)
+                .set("request_id", requestId)
+                .set("data", "")
+                .set("equipment_code", equipmentCode)
+                .finish();
+    }
+
+    /**
+     * 输送线指令写入器 (包含 relevancy_point)
+     */
+    private static void writeConveyorCommand(ByteBuf out, String equipmentCode, Long requestId, String event, String relevancyPoint) {
+        new FastJsonBuilder(out)
+                .set("date_time", CachedTimeUtils.getNowStringWithMillis())
+                .set("event", event)
+                .set("request_id", requestId)
+                .set("data", "")
+                .set("equipment_code", equipmentCode)
+                .set("relevancy_point", relevancyPoint)
+                .finish();
     }
 }

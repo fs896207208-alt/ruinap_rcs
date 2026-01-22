@@ -6,10 +6,13 @@ import com.ruinap.adapter.communicate.base.IBaseServer;
 import com.ruinap.adapter.communicate.base.ServerAttribute;
 import com.ruinap.adapter.communicate.base.TypedFuture;
 import com.ruinap.adapter.communicate.server.handler.IServerHandler;
+import com.ruinap.core.business.AlarmManager;
 import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.enums.netty.ServerRouteEnum;
+import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
@@ -35,7 +38,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * @create 2025-04-24 14:48
  */
 @ChannelHandler.Sharable
+@Component
 public class NettyServer extends SimpleChannelInboundHandler<Object> implements IBaseServer {
+    @Autowired
+    private AlarmManager alarmManager;
 
     /**
      * 存储服务端对象
@@ -220,7 +226,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
 
         ChannelHandlerContext ctx = CONTEXTS.get(serverId);
         if (ctx == null || !ctx.channel().isActive()) {
-            RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(serverId, " 服务端未连接或通道未激活"));
+            RcsLog.communicateOtherLog.error("{} 服务端未连接或通道未激活", serverId);
             future.completeExceptionally(new IllegalStateException("[" + serverId + "] 服务端未连接或通道未激活"));
             return future;
         }
@@ -236,7 +242,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             ScheduledFuture<?> timeoutScheduledFuture = eventLoop.schedule(() -> {
                 if (future.completeExceptionally(new TimeoutException("等待服务端响应超时"))) {
                     FUTURES.remove(key);
-                    RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(serverId, requestId + "请求超时"));
+                    RcsLog.communicateOtherLog.error("{} {}请求超时", serverId, requestId);
                 }
             }, timeoutSeconds, TimeUnit.SECONDS);
 
@@ -254,7 +260,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         } catch (Exception e) {
             FUTURES.remove(key);
             String errorMsg = String.format("消息发送异常: %s", e.getMessage());
-            RcsLog.communicateOtherLog.error(RcsLog.formatTemplateRandom(serverId, errorMsg));
+            RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), serverId, errorMsg);
             future.completeExceptionally(new RuntimeException(errorMsg, e));
         }
         return future;
@@ -320,7 +326,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
                 CHANNEL_IDS.putIfAbsent(id, serverId);
                 REQUESTIDS.putIfAbsent(serverId, new AtomicLong(0));
                 //记录日志
-                RcsLog.consoleLog.info(RcsLog.formatTemplateRandom(serverId, "服务端连接成功"));
+                RcsLog.consoleLog.info("{} 服务端连接成功", serverId);
             }
         }
 
@@ -380,14 +386,14 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             CONTEXTS.remove(serverId);
             PATHS.remove(serverId);
             REQUESTIDS.remove(serverId);
-            RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(serverId, "关闭服务端连接并清理资源"));
+            RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接并清理资源", serverId));
         } else {
-            RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(serverId, "关闭服务端连接"));
+            RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接", serverId));
         }
 
         if (!path.contains(ServerRouteEnum.VISUAL.getRoute())) {
             //触发告警
-            AlarmManage.triggerAlarm(serverId, AlarmCodeEnum.E12004, "rcs");
+            alarmManager.triggerAlarm(serverId, AlarmCodeEnum.E12004, "rcs");
         }
 
         //获取事件处理器
@@ -422,7 +428,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         // 从 Channel 的 AttributeKey 中获取服务端ID
         String serverId = channel.attr(AttributeKeyEnum.SERVER_ID.key()).get();
         //记录日志
-        RcsLog.consoleLog.error(RcsLog.formatTemplate(serverId, "server_error", cause.getMessage()));
+        RcsLog.consoleLog.error("{} server_error {}", serverId, cause.getMessage());
 
         //获取事件处理器
         IServerHandler serverEventHandler = ServerAttribute.ROUTES.get(this.attribute.getProtocol().getProtocol() + path);

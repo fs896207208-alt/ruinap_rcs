@@ -73,6 +73,8 @@ public class MapLoader {
         List<RcsPoint> allPoints = new ArrayList<>();
         // 存储每个地图文件的 MD5 指纹
         Map<Integer, String> md5Map = new HashMap<>();
+        // 存储每个地图文件的点位
+        Map<Integer, Map<Integer, RcsPoint>> maps = new HashMap<>();
 
         // --- 业务数据容器 (最终放入 Snapshot) ---
         Map<Integer, List<RcsPoint>> chargePoints = new HashMap<>();
@@ -81,7 +83,7 @@ public class MapLoader {
         Map<Integer, Map<String, List<RcsPoint>>> controlAreas = new HashMap<>();
         Map<Integer, Map<RcsPoint, List<RcsPoint>>> controlPoints = new HashMap<>();
         Map<Integer, Map<String, List<RcsPoint>>> avoidancePoints = new HashMap<>();
-        Map<Integer, Map<String, RcsPoint>> actionParamMap = new HashMap<>();
+        Map<String, RcsPoint> actionParamMap = new HashMap<>();
 
         // 2. 遍历解析每个地图 (MapId 维度)
         for (Map.Entry<Integer, String> entry : rawData.entrySet()) {
@@ -100,6 +102,12 @@ public class MapLoader {
                     mapPoints.forEach(p -> p.setMapId(mapId));
                     allPoints.addAll(mapPoints);
                 }
+                // 建立点位查找表
+                Map<Integer, RcsPoint> pointMap = new HashMap<>(mapPoints.size());
+                for (RcsPoint point : mapPoints) {
+                    pointMap.put(point.getId(), point);
+                }
+                maps.put(mapId, pointMap);
 
                 // 建立"当前地图"的本地查找表 (仅用于辅助解析当前的业务配置)
                 Map<Integer, RcsPoint> localMap = mapPoints.stream()
@@ -133,7 +141,7 @@ public class MapLoader {
 
                 Map<String, RcsPoint> aParams = parseActionParams(json, "action_param_index", localMap);
                 if (!aParams.isEmpty()) {
-                    actionParamMap.put(mapId, aParams);
+                    actionParamMap.putAll(aParams);
                 }
 
                 Map<RcsPoint, List<RcsPoint>> cPoints = loadControlPoints(mapId, json, mapYaml.getControlPoint(), localMap);
@@ -243,7 +251,7 @@ public class MapLoader {
         return MapSnapshot.builder()
                 .versionMd5(Collections.unmodifiableMap(md5Map))
                 .graph(graph)
-                .pointMap(Collections.unmodifiableMap(pointMap))
+                .pointMap(Collections.unmodifiableMap(maps))
                 .pointKeyToGraphId(Collections.unmodifiableMap(pointKeyToGraphId))
                 .occupys(Collections.unmodifiableMap(occupys))
                 .spatialIndexes(Collections.unmodifiableMap(spatialIndexes))
@@ -422,12 +430,14 @@ public class MapLoader {
      * <p>结构: [{"KeyName": PointID}, ...]</p>
      */
     private Map<String, RcsPoint> parseActionParams(JSONObject json, String key, Map<Integer, RcsPoint> localMap) {
-        Map<String, RcsPoint> res = new HashMap<>();
+        Map<String, RcsPoint> res = new HashMap<>(localMap.size());
         if (json.containsKey(key)) {
+            // 获取动参数组
             JSONArray arr = json.getJSONArray(key);
             for (Object o : arr) {
                 JSONObject obj = (JSONObject) o;
-                for (String paramKey : obj.keySet()) {
+                for (Map.Entry<String, Object> entry : obj.entrySet()) {
+                    String paramKey = entry.getKey();
                     RcsPoint p = localMap.get(obj.getInt(paramKey));
                     if (p != null) {
                         res.put(paramKey, p);

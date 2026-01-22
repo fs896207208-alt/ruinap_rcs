@@ -3,7 +3,7 @@ package com.ruinap.core.algorithm;
 import cn.hutool.core.util.ReflectUtil;
 import com.ruinap.core.map.pojo.RcsPoint;
 import com.ruinap.infra.config.CoreYaml;
-import com.ruinap.infra.framework.core.event.RcsMapConfigRefreshEvent;
+import com.ruinap.infra.framework.core.event.config.RcsMapConfigRefreshEvent;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

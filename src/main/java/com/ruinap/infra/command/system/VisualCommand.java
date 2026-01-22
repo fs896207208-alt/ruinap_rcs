@@ -2,8 +2,13 @@ package com.ruinap.infra.command.system;
 
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
+import com.ruinap.infra.framework.annotation.Component;
+import com.ruinap.infra.util.CachedTimeUtils;
+import com.ruinap.infra.util.FastJsonBuilder;
+import io.netty.buffer.ByteBuf;
 
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 调度可视化指令库
@@ -11,204 +16,163 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * @author qianye
  * @create 2024-09-18 1:34
  */
+@Component
 public class VisualCommand {
 
     /**
-     * 连接状态
+     * 写入连接状态
      *
+     * @param out     Netty ByteBuf
      * @param code    状态码
      * @param message 描述
-     * @return 指令
      */
-    public static JSONObject getConnState(int code, String message) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "conn_state");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", code);
-        jsonObject.set("message", message);
-        jsonObject.set("data", null);
-        return jsonObject;
+    public void writeConnState(ByteBuf out, int code, String message) {
+        // data 传 null
+        writeCommonResponse(out, "conn_state", code, message, null);
     }
 
     /**
-     * 获取地图数据
+     * 写入地图数据
      *
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray 地图数据
      */
-    public static JSONObject getMapData(JSONArray jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "map_data");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writeMapData(ByteBuf out, Object[] jsonArray) {
+        writeSuccessResponse(out, "map_data", jsonArray);
     }
 
     /**
-     * 获取占用点位数据
+     * 写入占用点位数据
      *
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray 点位数据
      */
-    public static JSONObject getOccupiedPoint(CopyOnWriteArrayList<JSONObject> jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "occupied_points");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writeOccupiedPoint(ByteBuf out, Object[] jsonArray) {
+        writeSuccessResponse(out, "occupied_points", jsonArray);
     }
 
     /**
-     * 获取权重点位数据
+     * 写入权重点位数据
      *
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray 点位数据
      */
-    public static JSONObject getWeightPoints(CopyOnWriteArrayList<JSONObject> jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "weight_points");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writeWeightPoints(ByteBuf out, Map jsonArray) {
+        writeSuccessResponse(out, "weight_points", jsonArray);
     }
 
     /**
-     * 获取AGV状态
+     * 写入 AGV 状态
      *
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray AGV列表
      */
-    public static JSONObject getAgvState(CopyOnWriteArrayList<JSONObject> jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "agv_info");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writeAgvState(ByteBuf out, Object[] jsonArray) {
+        writeSuccessResponse(out, "agv_info", jsonArray);
     }
 
     /**
-     * 获取第三方设备状态
+     * 写入第三方设备状态
      *
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray 设备列表
      */
-    public static JSONObject getThirdParty(CopyOnWriteArrayList<JSONObject> jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "third_party");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writeThirdParty(ByteBuf out, List<JSONObject> jsonArray) {
+        writeSuccessResponse(out, "third_party", jsonArray);
     }
 
     /**
-     * 获取任务列表数据
+     * 写入任务列表数据
      *
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray 任务列表
      */
-    public static JSONObject getTaskList(CopyOnWriteArrayList<JSONObject> jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "task_list");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writeTaskList(ByteBuf out, Object[] jsonArray) {
+        writeSuccessResponse(out, "task_list", jsonArray);
     }
 
     /**
-     * 获取告警信息数据
+     * 写入告警信息数据
      *
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray 告警列表
      */
-    public static JSONObject getAlarmList(CopyOnWriteArrayList<JSONObject> jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "alarm_msg");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writeAlarmList(ByteBuf out, List jsonArray) {
+        writeSuccessResponse(out, "alarm_msg", jsonArray);
     }
 
     /**
-     * 获取地图图片
+     * 写入地图图片数据
      *
-     * @return 指令
+     * @param out  Netty ByteBuf
+     * @param data 图片数据
      */
-    public static JSONObject getPngData(JSONObject data) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "png_data");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", data);
-        return jsonObject;
+    public void writePngData(ByteBuf out, JSONObject data) {
+        writeSuccessResponse(out, "png_data", data);
     }
 
     /**
-     * 获取缓冲区数据
+     * 写入缓冲区数据
      *
-     * @param jsonArray 数据
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray 缓冲区列表
      */
-    public static JSONObject getBufferList(CopyOnWriteArrayList<JSONObject> jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "agv_buffer");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writeBufferList(ByteBuf out, Object[] jsonArray) {
+        writeSuccessResponse(out, "agv_buffer", jsonArray);
     }
 
     /**
-     * 获取多层货物信息
+     * 写入多层货物信息
      *
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray 货物信息
      */
-    public static JSONObject getMultiLayerGoods(JSONArray jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "multi_layer_goods");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writeMultiLayerGoods(ByteBuf out, JSONArray jsonArray) {
+        writeSuccessResponse(out, "multi_layer_goods", jsonArray);
     }
 
     /**
-     * 获取回放列表数据
+     * 写入回放列表数据
      *
-     * @param jsonArray 数据
-     * @return 指令
+     * @param out       Netty ByteBuf
+     * @param jsonArray 回放列表
      */
-    public static JSONObject getPlaybackList(JSONArray jsonArray) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "playback_list");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", jsonArray);
-        return jsonObject;
+    public void writePlaybackList(ByteBuf out, JSONArray jsonArray) {
+        writeSuccessResponse(out, "playback_list", jsonArray);
     }
 
     /**
-     * 获取回放数据
+     * 写入回放详情数据
      *
-     * @return 指令
+     * @param out  Netty ByteBuf
+     * @param data 回放数据
      */
-    public static JSONObject playbackData(JSONObject data) {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.set("event", "playback_data");
-        //状态码 200成功 其他失败
-        jsonObject.set("code", 200);
-        jsonObject.set("message", "成功");
-        jsonObject.set("data", data);
-        return jsonObject;
+    public void writePlaybackData(ByteBuf out, JSONObject data) {
+        writeSuccessResponse(out, "playback_data", data);
+    }
+
+    // =========================================================
+    // 私有通用方法
+    // =========================================================
+
+    /**
+     * 写入默认成功响应 (code=200, message="成功")
+     */
+    private void writeSuccessResponse(ByteBuf out, String event, Object data) {
+        writeCommonResponse(out, event, 200, "成功", data);
+    }
+
+    /**
+     * 通用响应构建逻辑
+     */
+    private void writeCommonResponse(ByteBuf out, String event, int code, String message, Object data) {
+        new FastJsonBuilder(out)
+                // 增加时间戳 (响应你的 CachedTimeUtils 需求)
+                .set("date_time", CachedTimeUtils.getNowStringWithMillis())
+                .set("event", event)
+                .set("code", code)
+                .set("message", message)
+                .set("data", data)
+                .finish();
     }
 }

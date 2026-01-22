@@ -28,9 +28,9 @@ public record MapSnapshot(
         Digraph<RcsPoint, RcsPointTarget> graph,
         // 2. 入口索引 (业务ID -> 算法ID)
         Map<Long, Integer> pointKeyToGraphId,
-        // 3. 业务索引
-        Map<Long, RcsPoint> pointMap,
-        // 4. 版本号
+        // 3. 点位索引 (地图号 -> 点位ID -> 点位)
+        Map<Integer, Map<Integer, RcsPoint>> pointMap,
+        // 4. 地图版本号
         Map<Integer, String> versionMd5,
         // 5. 点位占用集合
         // Key: 地图编号_点位编号
@@ -67,7 +67,7 @@ public record MapSnapshot(
 
         /** * 动作参数绑定: MapId -> (ParamKey -> Point)
          */
-        Map<Integer, Map<String, RcsPoint>> actionParamMap
+        Map<String, RcsPoint> actionParamMap
 ) {
     /**
      * <h2>创建一个空的快照</h2>
@@ -107,7 +107,8 @@ public record MapSnapshot(
         if (mapId == null || pointId == null) {
             return null;
         }
-        return pointMap.get(MapKeyUtil.compositeKey(mapId, pointId));
+        Integer graphId = getGraphId(mapId, pointId);
+        return graph.getVertexLabel(graphId);
     }
 
     /**

@@ -15,7 +15,7 @@ import com.ruinap.infra.framework.core.AnnotationConfigApplicationContext;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.ApplicationContextAware;
 import com.ruinap.infra.framework.core.event.ApplicationListener;
-import com.ruinap.infra.framework.core.event.RcsCoreConfigRefreshEvent;
+import com.ruinap.infra.framework.core.event.config.RcsCoreConfigRefreshEvent;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 

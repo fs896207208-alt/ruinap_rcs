@@ -23,6 +23,12 @@ public class ConfigDB extends BaseDao {
 
     @Autowired
     private RcsDSFactory factory;
+
+    /**
+     * 工作状态 0结束工作 1正在工作 2上班中 3下班中（2、3状态未实现）
+     */
+    private volatile Integer WORK_STATE = null;
+
     /**
      * 表名称
      */
@@ -155,19 +161,22 @@ public class ConfigDB extends BaseDao {
     /**
      * 获取工作状态参数值
      *
-     * @return 参数值
+     * @return 工作状态  0结束工作 1正在工作 2上班中 3下班中
      */
     public Integer getWorkState() {
-        Integer count = 0;
-        try {
-            Entity configValue = getConfigValue("rcs.work.state");
-            if (configValue != null && !configValue.isEmpty()) {
-                count = configValue.getInt("config_value");
+        Integer workState = this.WORK_STATE;
+        if (workState == null) {
+            try {
+                Entity configValue = getConfigValue("rcs.work.state");
+                if (configValue != null && !configValue.isEmpty()) {
+                    workState = configValue.getInt("config_value");
+                }
+            } catch (Exception e) {
+                // 记录异常日志
+                throw new RuntimeException(e);
             }
-        } catch (Exception e) {
-            // 记录异常日志
-            throw new RuntimeException(e);
         }
-        return count;
+
+        return workState;
     }
 }

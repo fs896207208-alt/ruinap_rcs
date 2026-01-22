@@ -4,7 +4,7 @@ import cn.hutool.core.util.ReflectUtil;
 import com.ruinap.infra.config.pojo.CoreConfig;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.Environment;
-import com.ruinap.infra.framework.core.event.RcsCoreConfigRefreshEvent;
+import com.ruinap.infra.framework.core.event.config.RcsCoreConfigRefreshEvent;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
 

@@ -7,8 +7,9 @@ import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.annotation.PostConstruct;
 import com.ruinap.infra.framework.core.event.ApplicationListener;
-import com.ruinap.infra.framework.core.event.RcsMapConfigRefreshEvent;
+import com.ruinap.infra.framework.core.event.config.RcsMapConfigRefreshEvent;
 import com.ruinap.infra.log.RcsLog;
+import lombok.Getter;
 
 import java.util.List;
 import java.util.Map;
@@ -35,7 +36,10 @@ public class SlideTimeWindow implements ApplicationListener<RcsMapConfigRefreshE
      * 点位权重表
      * Key: Graph Index (Integer) —— 对应图算法的顶点索引
      * Value: 当前权重 (虽配置为int，但存储为Double以适配图算法接口)
+     * -- GETTER --
+     * 获取权重集合
      */
+    @Getter
     private final Map<Integer, Double> weightMap = new ConcurrentHashMap<>();
 
     /**

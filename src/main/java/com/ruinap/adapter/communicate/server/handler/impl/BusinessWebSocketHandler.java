@@ -3,11 +3,12 @@ package com.ruinap.adapter.communicate.server.handler.impl;
 import cn.hutool.db.Entity;
 import cn.hutool.json.JSONObject;
 import com.ruinap.adapter.communicate.base.ServerAttribute;
-import com.ruinap.adapter.communicate.event.BusinessWebSocketEvent;
 import com.ruinap.adapter.communicate.server.NettyServer;
 import com.ruinap.adapter.communicate.server.handler.IServerHandler;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
+import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.persistence.repository.ConfigDB;
 import io.netty.channel.ChannelHandler;
@@ -26,7 +27,10 @@ import java.sql.SQLException;
  * @create 2025-02-07 21:40
  */
 @ChannelHandler.Sharable
+@Component
 public class BusinessWebSocketHandler implements IServerHandler {
+    @Autowired
+    private ConfigDB configDB;
 
     /**
      * 协议枚举
@@ -54,7 +58,7 @@ public class BusinessWebSocketHandler implements IServerHandler {
                 JSONObject jsonObject = new JSONObject(request);
                 if (!jsonObject.isEmpty()) {
                     // 处理事件
-                    BusinessWebSocketEvent.receiveMessage(serverId, jsonObject);
+//                    BusinessWebSocketEvent.receiveMessage(serverId, jsonObject);
                 } else {
                     RcsLog.consoleLog.error("服务端 [" + serverId + "] 接收到空的参数");
                 }
@@ -102,7 +106,7 @@ public class BusinessWebSocketHandler implements IServerHandler {
                     ctx.writeAndFlush(new TextWebSocketFrame(entries.toString()))
                             .addListener(future -> {
                                 if (future.isSuccess()) {
-                                    RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(serverId, "服务端已连接到系统，因此你的连接被拒绝"));
+                                    RcsLog.consoleLog.error("{} 服务端已连接到系统，因此你的连接被拒绝", serverId);
                                     ctx.close();
                                 } else {
                                     // 将异常传递给 exceptionCaught
@@ -119,7 +123,7 @@ public class BusinessWebSocketHandler implements IServerHandler {
                 entries.set("msg", "Business服务端【" + serverId + "】连接成功，欢迎使用调度系统业务端");
                 Integer taskGroupKey = null;
                 try {
-                    Entity configValue = ConfigDB.getConfigValue("sys.task.key");
+                    Entity configValue = configDB.getConfigValue("sys.task.key");
                     if (configValue != null && !configValue.isEmpty()) {
                         taskGroupKey = configValue.getInt("config_value");
                     }

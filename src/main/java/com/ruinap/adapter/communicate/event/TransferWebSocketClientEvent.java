@@ -45,12 +45,11 @@ public class TransferWebSocketClientEvent extends AbstractClientEvent<TextWebSoc
                 }
 
                 //记录日志
-                RcsLog.communicateLog.info(RcsLog.formatTemplateRandom(equipmentType + "_" + clientId, "rec_data", jsonObject.getInt("request_id"), jsonObject));
+                RcsLog.communicateLog.info(RcsLog.getTemplate(5), RcsLog.randomInt(), equipmentType + "_" + clientId, "rec_data", jsonObject.getInt("request_id"), jsonObject);
             } else {
                 //记录日志
-                RcsLog.communicateLog.error(RcsLog.formatTemplateRandom(equipmentType + "_" + clientId, "rec_data", -1, "AgvEvent解析异常，非json格式数据:" + message));
+                RcsLog.communicateLog.error(RcsLog.getTemplate(5), RcsLog.randomInt(), equipmentType + "_" + clientId, "rec_data", -1, "AgvEvent解析异常，非json格式数据:" + message);
             }
         }
     }
-
 }

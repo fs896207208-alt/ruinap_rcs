@@ -19,7 +19,7 @@ public class PointActionParam implements Serializable {
      */
     private String name;
     /**
-     * 动参类型
+     * 动参类型 0起点动参 1终点动参
      */
     @Alias("act_type")
     private int actType;
@@ -38,7 +38,7 @@ public class PointActionParam implements Serializable {
      */
     private int index;
     /**
-     * 动作号
+     * 动作号 1 取货 2 放货 3 充电 4 对接设备
      */
     @Alias("task_act")
     private int taskAct;

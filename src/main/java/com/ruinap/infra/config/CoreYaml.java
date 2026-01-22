@@ -7,7 +7,7 @@ import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.annotation.PostConstruct;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.Environment;
-import com.ruinap.infra.framework.core.event.RcsCoreConfigRefreshEvent;
+import com.ruinap.infra.framework.core.event.config.RcsCoreConfigRefreshEvent;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;

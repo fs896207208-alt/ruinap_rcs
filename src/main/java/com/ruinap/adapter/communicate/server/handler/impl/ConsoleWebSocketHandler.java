@@ -2,11 +2,13 @@ package com.ruinap.adapter.communicate.server.handler.impl;
 
 import cn.hutool.json.JSONObject;
 import com.ruinap.adapter.communicate.base.ServerAttribute;
-import com.ruinap.adapter.communicate.event.ConsoleWebSocketServerEvent;
 import com.ruinap.adapter.communicate.server.NettyServer;
 import com.ruinap.adapter.communicate.server.handler.IServerHandler;
+import com.ruinap.infra.command.system.ConsoleCommand;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
+import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
@@ -20,7 +22,10 @@ import lombok.Getter;
  * @author qianye
  * @create 2025-01-28 21:40
  */
+@Component
 public class ConsoleWebSocketHandler implements IServerHandler {
+    @Autowired
+    private ConsoleCommand consoleCommand;
 
     /**
      * 协议枚举
@@ -45,7 +50,7 @@ public class ConsoleWebSocketHandler implements IServerHandler {
             // 处理文本帧，打印收到的消息并发送回客户端
             String request = ((TextWebSocketFrame) frame).text();
             // 处理事件
-            ConsoleWebSocketServerEvent.receiveMessage(serverId, request);
+//            ConsoleWebSocketServerEvent.receiveMessage(serverId, request);
 
         } else {
             // 如果不是文本帧，抛出异常或不处理
@@ -82,7 +87,7 @@ public class ConsoleWebSocketHandler implements IServerHandler {
                     ctx.writeAndFlush(new TextWebSocketFrame("服务端 [" + serverId + "] 已连接到系统，因此你的连接被拒绝"))
                             .addListener(future -> {
                                 if (future.isSuccess()) {
-                                    RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(serverId, "服务端已连接到系统，因此你的连接被拒绝"));
+                                    RcsLog.consoleLog.error("{} 服务端已连接到系统，因此你的连接被拒绝", serverId);
                                     ctx.close();
                                 } else {
                                     // 将异常传递给 exceptionCaught
@@ -96,7 +101,7 @@ public class ConsoleWebSocketHandler implements IServerHandler {
                     protocol = attribute.getProtocol();
                 }
                 ctx.writeAndFlush(new TextWebSocketFrame("Console服务端【" + serverId + "】连接成功，欢迎使用调度系统控制台"));
-                ctx.writeAndFlush(new TextWebSocketFrame(ConsoleCommand.getMenu()));
+                ctx.writeAndFlush(new TextWebSocketFrame(consoleCommand.getMenu()));
                 jsonObject.set("handshake_complete", true);
             }
         }

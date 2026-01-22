@@ -32,6 +32,13 @@ public class GeometryUtils {
     private static final GeometryFactory GEOMETRY_FACTORY = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING));
 
     /**
+     * 单层楼高度估算值 (单位: mm)
+     * <p>注意：此值必须 < MapLoader中的桥接边权重(500,000)，否则 A* 不再保证最优解。</p>
+     * <p>设为 100,000 意味着：算法认为跨一层楼至少相当于平面跑 100米。</p>
+     */
+    public static final int FLOOR_PENALTY = 100000;
+
+    /**
      * 边属性提供者接口
      * [Perf] 使用 FunctionalInterface 允许 Lambda 表达式传参。
      * 在 HotSpot JVM 中，Lambda 调用会被优化为 invokedynamic，性能开销极低，几乎等同于直接调用。
@@ -136,12 +143,23 @@ public class GeometryUtils {
 
     /**
      * 计算两点欧氏距离 (纯 CPU 计算)
+     * <p>
+     * 如果两点在同一楼层，则直接计算欧式距离。
+     * 否则，计算欧式距离并加上楼层高度差惩罚。
+     * <p>
      * [Perf] 极致性能优化：
      * 1. 避免了任何对象创建 (No Allocation)。
      * 2. Math.sqrt 和 Math.pow 会被 JIT 编译为 CPU 原语指令 (Intrinsic)，纳秒级响应。
      */
     public static int calculateDistance(RcsPoint p1, RcsPoint p2) {
-        return calculateDistance(p1.getX(), p1.getY(), p2.getX(), p2.getY());
+        int dist = calculateDistance(p1.getX(), p1.getY(), p2.getX(), p2.getY());
+        // 累加楼层高度差惩罚
+        // 如果楼层不同，强制叠加高度代价，打破“终点就在脚下”的幻觉
+        if (p1.getFloor() != p2.getFloor()) {
+            int floorDiff = Math.abs(p1.getFloor() - p2.getFloor());
+            dist += floorDiff * FLOOR_PENALTY;
+        }
+        return dist;
     }
 
     /**

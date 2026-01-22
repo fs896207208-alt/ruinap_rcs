@@ -1,5 +1,6 @@
 package com.ruinap.core.equipment.manager;
 
+import com.ruinap.core.equipment.pojo.AgvTask;
 import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.map.MapManager;
 import com.ruinap.core.map.enums.PointOccupyTypeEnum;
@@ -11,6 +12,7 @@ import com.ruinap.infra.enums.agv.*;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Service;
 import com.ruinap.infra.log.RcsLog;
+import lombok.Getter;
 
 import java.util.Collections;
 import java.util.List;
@@ -31,6 +33,14 @@ public class AgvManager {
     private TaskYaml taskYaml;
     @Autowired
     private MapManager mapManager;
+
+
+    /**
+     * AGV车体任务缓存
+     * key : AGV编号
+     */
+    @Getter
+    private final Map<String, AgvTask> agvTaskCache = new ConcurrentHashMap<>();
 
     /**
      * 全局AGV缓存
@@ -68,7 +78,7 @@ public class AgvManager {
      * @param rcsAgv AGV对象
      * @return 在线状态，true：在线，false：离线
      */
-    public static boolean getRcsAgvOnline(RcsAgv rcsAgv) {
+    public boolean getRcsAgvByOnline(RcsAgv rcsAgv) {
         return !AgvStateEnum.isEnumByCode(AgvStateEnum.OFFLINE, rcsAgv.getAgvState());
     }
 
@@ -78,7 +88,7 @@ public class AgvManager {
      * @param rcsAgv AGV对象
      * @return 隔离状态 0未隔离 1在线隔离 2离线隔离
      */
-    public static Integer getRcsAgvIsIsolation(RcsAgv rcsAgv) {
+    public Integer getRcsAgvByIsolation(RcsAgv rcsAgv) {
         return rcsAgv.getIsolationState();
     }
 
@@ -88,7 +98,7 @@ public class AgvManager {
      * @param rcsAgv AGV对象
      * @return 校验状态，true：已校验，false：未校验
      */
-    public static boolean getRcsAgvMapCheck(RcsAgv rcsAgv) {
+    public boolean getRcsAgvMapCheck(RcsAgv rcsAgv) {
         return rcsAgv.isMapChecked();
     }
 
@@ -98,8 +108,18 @@ public class AgvManager {
      * @param rcsAgv AGV对象
      * @return 控制权 0调度 1其他
      */
-    public static Integer getAgvControl(RcsAgv rcsAgv) {
+    public Integer getAgvControl(RcsAgv rcsAgv) {
         return rcsAgv.getAgvControl();
+    }
+
+    /**
+     * 获取指定AGV的控制模式
+     *
+     * @param rcsAgv AGV对象
+     * @return AGV控制模式 0单车调试，1点对点，2调度
+     */
+    public Integer getAgvControlMode(RcsAgv rcsAgv) {
+        return rcsAgv.getAgvControlMode();
     }
 
     /**
@@ -125,7 +145,7 @@ public class AgvManager {
     public RcsAgv getRcsAgvIdle(RcsAgv rcsAgv) {
         String agvId = rcsAgv.getAgvId();
         //判断AGV是否在线
-        boolean rcsAgvOnline = getRcsAgvOnline(rcsAgv);
+        boolean rcsAgvOnline = getRcsAgvByOnline(rcsAgv);
         if (!rcsAgvOnline) {
             RcsLog.algorithmLog.warn("{} AGV状态[{}]，当前无法获取空闲AGV信息", agvId, rcsAgv.getAgvState());
             return null;
@@ -139,14 +159,20 @@ public class AgvManager {
         }
 
         //判断AGV是否是隔离
-        Integer isolation = getRcsAgvIsIsolation(rcsAgv);
+        Integer isolation = getRcsAgvByIsolation(rcsAgv);
         if (isolation == null || !AgvIsolationStateEnum.isEnumByCode(AgvIsolationStateEnum.NORMAL, isolation)) {
             RcsLog.algorithmLog.warn("{} AGV隔离状态[{}]，当前无法获取空闲AGV信息", agvId, rcsAgv.getIsolationState());
             return null;
         }
 
-        //判断AGV是否调度模式
-        if (!AgvControlModeEnum.isEnumByCode(AgvControlModeEnum.RCS, getAgvControl(rcsAgv))) {
+        //判断AGV控制权是否调度模式
+        if (!AgvControlEnum.isEnumByCode(AgvControlEnum.RCS, getAgvControl(rcsAgv))) {
+            RcsLog.algorithmLog.warn("{} AGV的控制权[{}]不属于调度，当前无法获取空闲AGV信息", agvId, rcsAgv.getAgvControl());
+            return null;
+        }
+
+        //判断AGV控制模式是否调度模式
+        if (!AgvControlModeEnum.isEnumByCode(AgvControlModeEnum.RCS, getAgvControlMode(rcsAgv))) {
             RcsLog.algorithmLog.warn("{} AGV的控制模式[{}]不属于调度，当前无法获取空闲AGV信息", agvId, rcsAgv.getAgvControlMode());
             return null;
         }
@@ -212,7 +238,7 @@ public class AgvManager {
 
             //判断AGV是否是隔离
             //充电状态不管是否隔离
-            Integer isolation = getRcsAgvIsIsolation(rcsAgv);
+            Integer isolation = getRcsAgvByIsolation(rcsAgv);
             if (isolation == null || !AgvIsolationStateEnum.isEnumByCode(AgvIsolationStateEnum.NORMAL, isolation)) {
                 continue;
             }
@@ -248,7 +274,7 @@ public class AgvManager {
         }
 
         //判断AGV是否是隔离
-        Integer isolation = getRcsAgvIsIsolation(rcsAgv);
+        Integer isolation = getRcsAgvByIsolation(rcsAgv);
         if (isolation == null || !AgvIsolationStateEnum.isEnumByCode(AgvIsolationStateEnum.NORMAL, isolation)) {
             return null;
         }
@@ -309,7 +335,7 @@ public class AgvManager {
             }
 
             //判断AGV是否是隔离
-            Integer isolation = getRcsAgvIsIsolation(rcsAgv);
+            Integer isolation = getRcsAgvByIsolation(rcsAgv);
             if (isolation == null || !AgvIsolationStateEnum.isEnumByCode(AgvIsolationStateEnum.NORMAL, isolation)) {
                 continue;
             }
@@ -361,7 +387,7 @@ public class AgvManager {
                     continue;
                 }
                 //判断AGV是否是隔离
-                Integer isolation = getRcsAgvIsIsolation(rcsAgv);
+                Integer isolation = getRcsAgvByIsolation(rcsAgv);
                 if (isolation == null || !AgvIsolationStateEnum.isEnumByCode(AgvIsolationStateEnum.NORMAL, isolation)) {
                     continue;
                 }
@@ -395,9 +421,9 @@ public class AgvManager {
             Integer pointId = rcsAgv.getPointId();
 
             //判断AGV是否是隔离
-            Integer agvIsIsolation = getRcsAgvIsIsolation(rcsAgv);
+            Integer agvIsIsolation = getRcsAgvByIsolation(rcsAgv);
             //判断AGV是否在线
-            boolean agvOnline = getRcsAgvOnline(rcsAgv);
+            boolean agvOnline = getRcsAgvByOnline(rcsAgv);
             RcsPoint rcsPoint = mapManager.getRcsPoint(mapId, pointId);
             if (rcsPoint == null) {
                 clearAgvAllLocks(agvId);
@@ -454,8 +480,8 @@ public class AgvManager {
 
         // 状态校验
         boolean mapCheck = getRcsAgvMapCheck(agv);
-        Integer isolation = getRcsAgvIsIsolation(agv);
-        boolean agvOnline = getRcsAgvOnline(agv);
+        Integer isolation = getRcsAgvByIsolation(agv);
+        boolean agvOnline = getRcsAgvByOnline(agv);
         boolean isNormal = mapCheck && AgvIsolationStateEnum.isEnumByCode(AgvIsolationStateEnum.NORMAL, isolation) && agvOnline;
 
         // --- 1. 管制区 (Control Area) ---

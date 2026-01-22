@@ -1,14 +1,23 @@
 package com.ruinap.adapter.communicate.client.handler.impl;
 
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import com.ruinap.adapter.communicate.base.ClientAttribute;
 import com.ruinap.adapter.communicate.base.event.AbstractClientEvent;
 import com.ruinap.adapter.communicate.client.handler.ClientHandler;
 import com.ruinap.adapter.communicate.client.registry.EventRegistry;
+import com.ruinap.core.business.AgvSuggestionManager;
+import com.ruinap.core.equipment.manager.AgvManager;
+import com.ruinap.core.equipment.manager.ChargePileManager;
 import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.equipment.pojo.RcsChargePile;
+import com.ruinap.core.task.TaskPathManager;
+import com.ruinap.core.task.domain.TaskPath;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
+import com.ruinap.infra.enums.task.PlanStateEnum;
+import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -20,7 +29,16 @@ import io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler;
  * @author qianye
  * @create 2025-05-12 09:45
  */
+@Component
 public class WebSocketClientHandler implements ClientHandler {
+    @Autowired
+    private AgvManager agvManager;
+    @Autowired
+    private ChargePileManager chargePileManager;
+    @Autowired
+    private AgvSuggestionManager agvSuggestionManager;
+    @Autowired
+    private TaskPathManager taskPathManager;
 
     /**
      * 用于处理接收到的特定类型消息（如TextWebSocketFrame）。在此处理WebSocket帧数据
@@ -31,7 +49,7 @@ public class WebSocketClientHandler implements ClientHandler {
     @Override
     public void channelRead0(ChannelHandlerContext ctx, Object frame, ClientAttribute attribute) {
         //调用事件处理
-        AbstractClientEvent event = EventRegistry.getEvent(attribute.getBrand().getBrand(), attribute.getEquipmentType().getEquipmentType());
+        AbstractClientEvent event = EventRegistry.getEvent(attribute.getEquipmentType().getEquipmentType());
         event.receiveMessage(attribute, frame);
     }
 
@@ -47,22 +65,22 @@ public class WebSocketClientHandler implements ClientHandler {
         LinkEquipmentTypeEnum equipmentType = attribute.getEquipmentType();
         switch (equipmentType) {
             case AGV:
-                RcsAgv rcsAgv = DbCache.RCS_AGV_MAP.get(clientId);
+                RcsAgv rcsAgv = agvManager.getRcsAgvByCode(clientId);
 
-                RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(equipmentType.getEquipmentType() + "_" + rcsAgv.getAgvId(), "AGV连接失败次数过多，将进入取消任务流程"));
+                RcsLog.consoleLog.error("{} AGV连接失败次数过多，将进入取消任务流程", StrUtil.format("{}_{}", equipmentType.getEquipmentType(), rcsAgv.getAgvId()));
                 //将数据存到AGV错误字段中
-                AgvSuggestionManage.addSuggestion(equipmentType.getEquipmentType() + "_" + rcsAgv.getAgvId(), "AGV连接失败次数过多，将进入取消任务流程");
+                agvSuggestionManager.addSuggestion(equipmentType.getEquipmentType() + "_" + rcsAgv.getAgvId(), "AGV连接失败次数过多，将进入取消任务流程");
                 //获取任务路径
-                TaskPath taskPath = TaskPathCache.getFirst(rcsAgv.getAgvId());
+                TaskPath taskPath = taskPathManager.getFirst(rcsAgv.getAgvId());
                 if (taskPath != null) {
                     //设置任务状态为取消
                     taskPath.setState(PlanStateEnum.CANCEL.code);
                 }
                 break;
             case CHARGE_PILE:
-                RcsChargePile rcsChargePile = DbCache.RCS_CHARGE_MAP.get(clientId);
+                RcsChargePile rcsChargePile = chargePileManager.getRcsChargePileByCode(clientId);
                 rcsChargePile.setState(0);
-                RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(equipmentType.getEquipmentType() + "_" + clientId, "充电桩连接失败次数过多，设置为离线状态"));
+                RcsLog.consoleLog.error("{} 充电桩连接失败次数过多，设置为离线状态", StrUtil.format("{}_{}", equipmentType.getEquipmentType(), clientId));
                 break;
             case TRANSFER:
                 RcsLog.consoleLog.warn("中转系统连接失败，正在继续尝试连接");
@@ -91,8 +109,8 @@ public class WebSocketClientHandler implements ClientHandler {
             //如果客户端ID不为空，则记录客户端上下文
             if (clientId != null && !clientId.isEmpty()) {
                 // 连接建立时触发
-                RcsLog.consoleLog.info(RcsLog.formatTemplateRandom(clientId, "userEventTriggered 已连接到 " + attribute.getProtocol().getProtocol() + " 服务器: " + ctx.channel().remoteAddress()));
-                RcsLog.communicateLog.info(RcsLog.formatTemplateRandom(clientId, "userEventTriggered 已连接到 " + attribute.getProtocol().getProtocol() + " 服务器: " + ctx.channel().remoteAddress()));
+                RcsLog.consoleLog.info("{} userEventTriggered 已连接到 {} 服务器: {}", clientId, attribute.getProtocol().getProtocol(), ctx.channel().remoteAddress());
+                RcsLog.communicateLog.info("{} userEventTriggered 已连接到 {} 服务器: {}", clientId, attribute.getProtocol().getProtocol(), ctx.channel().remoteAddress());
                 jsonObject.set("handshake_complete", true);
             }
         }
@@ -147,11 +165,11 @@ public class WebSocketClientHandler implements ClientHandler {
         // 从 Channel 的 Attribute 中获取客户端 ID
         Channel channel = ctx.channel();
         String clientId = channel.attr(AttributeKeyEnum.CLIENT_ID.key()).get();
-        RcsAgv rcsAgv = DbCache.RCS_AGV_MAP.get(clientId);
+        RcsAgv rcsAgv = agvManager.getRcsAgvByCode(clientId);
         if (rcsAgv != null) {
             rcsAgv.setAgvState(-1);
             rcsAgv.setLight(1);
-            RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(clientId, "AGV与调度断开连接，设置为离线状态"));
+            RcsLog.consoleLog.error("{} AGV与调度断开连接，设置为离线状态", clientId);
         }
     }
 }

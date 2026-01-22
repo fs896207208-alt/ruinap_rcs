@@ -3,6 +3,7 @@ package com.ruinap.core.algorithm;
 import com.ruinap.core.map.pojo.MapSnapshot;
 import com.ruinap.core.map.pojo.RcsPoint;
 import com.ruinap.core.map.pojo.RcsPointTarget;
+import com.ruinap.core.map.util.GeometryUtils;
 import org.graph4j.Digraph;
 import org.graph4j.GraphBuilder;
 import org.junit.jupiter.api.Assertions;
@@ -68,7 +69,7 @@ public class RcsAstarEstimatorTest {
         // P0(1楼) -> P2(2楼)
         double cost = estimator.estimate(0, 2);
 
-        double expected = RcsAstarEstimator.FLOOR_PENALTY;
+        double expected = GeometryUtils.FLOOR_PENALTY;
         Assertions.assertEquals(expected, cost, DELTA, "跨层重叠点应包含楼层惩罚");
     }
 
@@ -78,7 +79,7 @@ public class RcsAstarEstimatorTest {
         // P0(1楼) -> P3(2楼)
         double cost = estimator.estimate(0, 3);
 
-        double expected = 5000.0 + RcsAstarEstimator.FLOOR_PENALTY;
+        double expected = 5000.0 + GeometryUtils.FLOOR_PENALTY;
         Assertions.assertEquals(expected, cost, DELTA, "跨层移动应叠加计算");
     }
 
@@ -88,7 +89,7 @@ public class RcsAstarEstimatorTest {
         // P0(1楼) -> P4(3楼)
         double cost = estimator.estimate(0, 4);
 
-        double expected = RcsAstarEstimator.FLOOR_PENALTY * 2;
+        double expected = GeometryUtils.FLOOR_PENALTY * 2;
         Assertions.assertEquals(expected, cost, DELTA, "跨多层应有多倍惩罚");
     }
 

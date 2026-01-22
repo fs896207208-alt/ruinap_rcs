@@ -2,17 +2,16 @@ package com.ruinap.core.map;
 
 import cn.hutool.core.util.StrUtil;
 import com.ruinap.core.map.enums.PointOccupyTypeEnum;
-import com.ruinap.core.map.pojo.MapSnapshot;
-import com.ruinap.core.map.pojo.RcsPoint;
-import com.ruinap.core.map.pojo.RcsPointOccupy;
-import com.ruinap.core.map.pojo.RcsPointTarget;
+import com.ruinap.core.map.pojo.*;
 import com.ruinap.core.map.util.MapKeyUtil;
+import com.ruinap.infra.config.TaskYaml;
+import com.ruinap.infra.enums.task.TaskTypeEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.annotation.Order;
 import com.ruinap.infra.framework.boot.CommandLineRunner;
 import com.ruinap.infra.framework.core.event.ApplicationListener;
-import com.ruinap.infra.framework.core.event.RcsMapConfigRefreshEvent;
+import com.ruinap.infra.framework.core.event.config.RcsMapConfigRefreshEvent;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 import lombok.Getter;
@@ -38,9 +37,14 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
     @Autowired
     private MapLoader mapLoader;
     @Autowired
+    private TaskYaml taskYaml;
+    @Autowired
     private VthreadPool vthreadPool;
 
     // ================== 1. 静态数据区 ==================
+
+    private static final String ACTION_KEY = "action";
+    private static final String PARAMETER_KEY = "parameter";
     /**
      * 不可变快照，支持高并发读。
      * 使用 volatile 保证热更新时的内存可见性。
@@ -52,6 +56,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
      * Key: deviceCode
      * Value: RcsPointOccupy
      */
+    @Getter
     private final Map<String, Set<RcsPointOccupy>> deviceOccupyIndex = new ConcurrentHashMap<>();
 
     /**
@@ -151,6 +156,22 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
     public boolean getPointOccupyState(Integer mapId, Integer pointId) {
         boolean occupied = false;
         RcsPointOccupy rcsOccupy = getPointOccupy(mapId, pointId);
+        if (rcsOccupy != null) {
+            occupied = rcsOccupy.isPhysicalBlocked();
+        }
+
+        return occupied;
+    }
+
+    /**
+     * 检查点位是否被占用
+     *
+     * @param rcsPoint 地图点位
+     * @return true=点位被占用; false=点位未被占用
+     */
+    public boolean getPointOccupyState(RcsPoint rcsPoint) {
+        boolean occupied = false;
+        RcsPointOccupy rcsOccupy = getRcsOccupy(rcsPoint);
         if (rcsOccupy != null) {
             occupied = rcsOccupy.isPhysicalBlocked();
         }
@@ -277,7 +298,7 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
     }
 
     /**
-     * 【核心业务】更新驻留占用 (原子性：查重 -> 锁新 -> 清旧)
+     * 更新停车占用 (原子性：查重 -> 锁新 -> 清旧)
      * <p>
      * <strong>功能定义：</strong>
      * 1. 幂等性检查：如果已经在目标点位持有目标类型的锁，直接返回。
@@ -577,6 +598,65 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
     }
 
     /**
+     * 获取别名配置的点位
+     * <p>
+     * 如果别名匹配不到数据，则返回null
+     *
+     * @param alias 别名（格式：配置的正则别名）
+     * @return 点位编号，如果没有则返回null
+     */
+    public RcsPoint getPointByAlias(String alias) {
+        // 初始化点位编号为null，用于存储匹配到的点位编号
+        RcsPoint point = null;
+        if (alias == null || alias.isEmpty()) {
+            return point;
+        }
+
+        MapSnapshot localSnap = this.snapshot;
+        //1、从地图获取点位别名配置
+        point = localSnap.actionParamMap().get(alias);
+
+        if (point == null) {
+            //2、获取点位别名配置，配置可能包含多个别名及对应的点位编号
+            Map<String, String> taskPiontAlias = taskYaml.getTaskPiontAlias();
+            // 遍历配置中的每个点位别名条目
+            for (Map.Entry<String, String> entry : taskPiontAlias.entrySet()) {
+                // 获取当前条目的正则表达式和对应的别名
+                String regex = entry.getKey();
+                String currentPoint = entry.getValue();
+                // 使用正则表达式匹配给定的编号是否符合当前条目的模式
+                if (alias.matches(regex)) {
+                    try {
+                        String[] split = currentPoint.split("-");
+                        // 如果匹配成功，将当前点位编号赋值给点位编号，并结束循环
+                        point = this.getRcsPoint(Integer.parseInt(split[0]), Integer.parseInt(split[1]));
+                    } catch (Exception e) {
+                        return null;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (point == null) {
+            //3、直接从地图获取点位
+            String[] mapIdAndPointId = alias.split("-");
+            try {
+                if (mapIdAndPointId.length > 1) {
+                    //获取点位
+                    point = this.getRcsPoint(Integer.parseInt(mapIdAndPointId[0]), Integer.parseInt(mapIdAndPointId[1]));
+                } else if (mapIdAndPointId.length == 1) {
+                    //获取点位
+                    point = this.getRcsPoint(1, Integer.parseInt(mapIdAndPointId[0]));
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        // 返回匹配到的点位编号，如果未匹配到则返回null
+        return point;
+    }
+
+    /**
      * 获取点位目标
      *
      * @param mapId    地图编号
@@ -690,7 +770,274 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
         }
     }
 
-    // ================== 5. 地图加载逻辑 ==================
+    // ================== 5. 动参查询逻辑 ==================
+
+    /**
+     * 获取起点动作参数
+     * <p>
+     * 系统按 [点位别名 - 任务类型 - 托盘类型] -> [点位别名 - 任务类型] -> [点位别名] 的顺序匹配，如果都匹配不到，则返回默认的动作和参数
+     *
+     * @param agvId      AGV编号
+     * @param origin     起点别名
+     * @param taskType   任务类型 (0:搬运, 1:充电, 2:停靠, 3:临时)
+     * @param palletType 托盘类型
+     * @return 动作参数
+     */
+    public Map<String, Integer> getOriginActionParameter(String agvId, String origin, Integer taskType, Integer palletType) {
+        RcsLog.consoleLog.info("{} {} 获取起点动作参数，起点【{}】，任务类型【{}】，托盘类型【{}】", RcsLog.randomInt(), agvId, origin, TaskTypeEnum.fromEnum(taskType).description, palletType);
+        RcsLog.taskLog.info("{} {} 获取起点动作参数，起点【{}】，任务类型【{}】，托盘类型【{}】", RcsLog.randomInt(), agvId, origin, TaskTypeEnum.fromEnum(taskType).description, palletType);
+
+        //动参类型 0起点动参 1终点动参
+        int actType = 0;
+
+        // 尝试获取地图配置的动作参数
+        Map<String, Integer> originActionMap = getMapConfigActionParameter(agvId, actType, origin, taskType, palletType);
+        if (originActionMap == null) {
+            Map<String, String> originActionParameter = taskYaml.getOriginActionParameter();
+            originActionMap = getRcsConfigActionParameter(agvId, actType, origin, taskType, palletType, originActionParameter);
+        }
+        return originActionMap;
+    }
+
+    /**
+     * 获取终点动作参数
+     * <p>
+     * 系统按 [点位别名 + 任务类型 + 托盘类型] -> [点位别名 + 任务类型] -> [点位别名] 的顺序匹配，如果都匹配不到，则返回默认的动作和参数
+     *
+     * @param agvId      AGV编号
+     * @param destin     终点别名
+     * @param taskType   任务类型 (0:搬运, 1:充电, 2:停靠, 3:临时)
+     * @param palletType 托盘类型
+     * @return 动作参数
+     */
+    public Map<String, Integer> getDestinActionParameter(String agvId, String destin, Integer taskType, Integer palletType) {
+        RcsLog.consoleLog.info("{} {} 获取终点动作参数，起点【{}】，任务类型【{}】，托盘类型【{}】", RcsLog.randomInt(), agvId, destin, TaskTypeEnum.fromEnum(taskType).description, palletType);
+        RcsLog.taskLog.info("{} {} 获取终点动作参数，起点【{}】，任务类型【{}】，托盘类型【{}】", RcsLog.randomInt(), agvId, destin, TaskTypeEnum.fromEnum(taskType).description, palletType);
+
+        //动参类型 0起点动参 1终点动参
+        int actType = 1;
+
+        // 尝试获取地图配置的动作参数
+        Map<String, Integer> destinActionMap = getMapConfigActionParameter(agvId, actType, destin, taskType, palletType);
+        if (destinActionMap == null) {
+            Map<String, String> destinActionParameter = taskYaml.getDestinActionParameter();
+            destinActionMap = getRcsConfigActionParameter(agvId, actType, destin, taskType, palletType, destinActionParameter);
+        }
+        return destinActionMap;
+    }
+
+    /**
+     * 获取地图配置的动作参数
+     *
+     * @param agvId      AGV编号
+     * @param actType    动参类型  0起点动参 1终点动参
+     * @param pointAlias 点位别名
+     * @param taskType   任务类型 (0:搬运, 1:充电, 2:停靠, 3:临时) (可为 null)
+     * @param palletType 托盘类型 (可为 null)
+     * @return 动作参数
+     */
+    private Map<String, Integer> getMapConfigActionParameter(String agvId, Integer actType, String pointAlias, Integer taskType, Integer palletType) {
+        Map<String, Integer> checkMap = new HashMap<>(2);
+
+        //获取地图配置的动作参数点位
+        RcsPoint rcsPoint = this.getPointByAlias(pointAlias);
+        if (rcsPoint == null) {
+            return null;
+        }
+
+        //获取地图配置的动作参数
+        List<PointActionParam> actionParam = rcsPoint.getActionParam();
+        // 优先级 1: [任务类型 + 动参类型 + 点位别名 + 托盘类型]
+        for (PointActionParam pointActionParam : actionParam) {
+            // 判断任务类型
+            if (taskType.equals(pointActionParam.getTaskType())) {
+                // 判断动参类型
+                if (actType.equals(pointActionParam.getActType())) {
+                    // 判断点位别名
+                    if (pointAlias.trim().equalsIgnoreCase(pointActionParam.getName().trim())) {
+                        // 判断托盘类型
+                        if (palletType.equals(pointActionParam.getPalletType())) {
+                            return parseMapActionParameter(agvId, pointActionParam.getTaskAct(), pointActionParam.getTaskParam(), checkMap);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 优先级 2: [动参类型 + 点位别名 + 托盘类型]
+        for (PointActionParam pointActionParam : actionParam) {
+            // 判断动参类型
+            if (actType.equals(pointActionParam.getActType())) {
+                // 判断点位别名
+                if (pointAlias.trim().equalsIgnoreCase(pointActionParam.getName().trim())) {
+                    // 判断托盘类型
+                    if (palletType.equals(pointActionParam.getPalletType())) {
+                        return parseMapActionParameter(agvId, pointActionParam.getTaskAct(), pointActionParam.getTaskParam(), checkMap);
+                    }
+                }
+            }
+        }
+
+        // 优先级 3: [动参类型 + 点位别名]
+        for (PointActionParam pointActionParam : actionParam) {
+            // 判断动参类型
+            if (actType.equals(pointActionParam.getActType())) {
+                // 判断点位别名
+                if (pointAlias.trim().equalsIgnoreCase(pointActionParam.getName().trim())) {
+                    return parseMapActionParameter(agvId, pointActionParam.getTaskAct(), pointActionParam.getTaskParam(), checkMap);
+                }
+            }
+        }
+
+        //获取默认动作参数
+        return getDefaultActionParam(agvId, actType, pointAlias, taskType, checkMap);
+    }
+
+    /**
+     * 获取系统配置的动作参数
+     *
+     * @param agvId           AGV编号
+     * @param actType         动作类型
+     * @param pointAlias      点位别名
+     * @param taskType        任务类型 (可为 null)
+     * @param palletType      托盘类型 (可为 null)
+     * @param actionParameter 动参配置
+     * @return 动作参数
+     */
+    private static Map<String, Integer> getRcsConfigActionParameter(String agvId, Integer actType, String pointAlias, Integer taskType, Integer palletType, Map<String, String> actionParameter) {
+        Map<String, Integer> checkMap = new HashMap<>(2);
+
+        // 生成所有可能的匹配键（从最具体到最泛化）
+        // 例如 "F80-0-0"
+        String fullKey = (taskType != null && palletType != null) ? StrUtil.format("{}-{}-{}", pointAlias, taskType, palletType) : null;
+        // 例如 "F80-0"
+        String aliasPalletKey = palletType != null ? StrUtil.format("{}-{}", pointAlias, palletType) : null;
+        // 例如 "F80"
+        String aliasKey = pointAlias;
+
+        // 优先级 1: [点位别名 + 任务类型 + 托盘类型]
+        if (fullKey != null) {
+            for (Map.Entry<String, String> entry : actionParameter.entrySet()) {
+                String regex = entry.getKey();
+                if (fullKey.matches(regex)) {
+                    return parseRcsActionParameter(agvId, regex, entry.getValue(), checkMap);
+                }
+            }
+            RcsLog.consoleLog.info("{} {} 未匹配到配置键【{}】，尝试简化托盘类型匹配", RcsLog.randomInt(), agvId, fullKey);
+            RcsLog.taskLog.info("{} {} 未匹配到配置键【{}】，尝试简化托盘类型匹配", RcsLog.randomInt(), agvId, fullKey);
+            RcsLog.algorithmLog.info("{} {} 未匹配到配置键【{}】，尝试简化托盘类型匹配", RcsLog.randomInt(), agvId, fullKey);
+        }
+
+        // 优先级 2: [点位别名 + 托盘类型]
+        if (aliasPalletKey != null) {
+            for (Map.Entry<String, String> entry : actionParameter.entrySet()) {
+                String regex = entry.getKey();
+                if (aliasPalletKey.matches(regex)) {
+                    return parseRcsActionParameter(agvId, regex, entry.getValue(), checkMap);
+                }
+            }
+            RcsLog.consoleLog.info("{} {} 未匹配到配置键【{}】，尝试简化任务类型匹配", RcsLog.randomInt(), agvId, aliasPalletKey);
+            RcsLog.taskLog.info("{} {} 未匹配到配置键【{}】，尝试简化任务类型匹配", RcsLog.randomInt(), agvId, aliasPalletKey);
+            RcsLog.algorithmLog.info("{} {} 未匹配到配置键【{}】，尝试简化任务类型匹配", RcsLog.randomInt(), agvId, aliasPalletKey);
+        }
+
+        // 优先级 3: [点位别名]
+        for (Map.Entry<String, String> entry : actionParameter.entrySet()) {
+            String regex = entry.getKey();
+            if (aliasKey.matches(regex)) {
+                return parseRcsActionParameter(agvId, regex, entry.getValue(), checkMap);
+            }
+        }
+
+        //获取默认动作参数
+        return getDefaultActionParam(agvId, actType, pointAlias, taskType, checkMap);
+    }
+
+    /**
+     * 获取默认动作参数
+     *
+     * @param agvId      AGV
+     * @param actType    动参类型 0起点动参 1终点动参
+     * @param pointAlias 点位别名
+     * @param taskType   任务类型
+     * @param checkMap   动参
+     * @return 动作参数
+     */
+    private static Map<String, Integer> getDefaultActionParam(String agvId, Integer actType, String pointAlias, Integer taskType, Map<String, Integer> checkMap) {
+        //获取任务类型枚举
+        TaskTypeEnum taskTypeEnum = TaskTypeEnum.fromEnum(taskType);
+        //动作：1取货 2放货 3充电 4对接设备
+        switch (taskTypeEnum) {
+            case CHARGE:
+                checkMap.put(ACTION_KEY, 3);
+                break;
+            case CARRY:
+                if (actType == 0) {
+                    checkMap.put(ACTION_KEY, 1);
+                } else {
+                    checkMap.put(ACTION_KEY, 2);
+                }
+                break;
+            case DOCK:
+            case TEMPORARY:
+            case AVOIDANCE:
+            case NULL:
+            default:
+                checkMap.put(ACTION_KEY, 0);
+                break;
+        }
+        checkMap.put(PARAMETER_KEY, 0);
+        RcsLog.consoleLog.info("{} {} 未匹配到配置键【{}】，使用默认动作参数", RcsLog.randomInt(), agvId, pointAlias);
+        RcsLog.taskLog.info("{} {} 未匹配到配置键【{}】，使用默认动作参数", RcsLog.randomInt(), agvId, pointAlias);
+        RcsLog.algorithmLog.info("{} {} 未匹配到配置键【{}】，使用默认动作参数", RcsLog.randomInt(), agvId, pointAlias);
+
+        return checkMap;
+    }
+
+    /**
+     * 解析地图动作参数
+     *
+     * @param agvId     AGV编号
+     * @param taskAct   动作号
+     * @param taskParam 动作参数
+     * @param checkMap  结果 Map
+     * @return 动作参数
+     */
+    private static Map<String, Integer> parseMapActionParameter(String agvId, Integer taskAct, String taskParam, Map<String, Integer> checkMap) {
+        checkMap.put(ACTION_KEY, taskAct);
+        checkMap.put(PARAMETER_KEY, Integer.parseInt(taskParam));
+        RcsLog.consoleLog.info("{} {} 获取到配置的动参数据：{} -> {}", RcsLog.randomInt(), agvId, taskAct, taskParam);
+        RcsLog.taskLog.info("{} {} 获取到配置的动参数据：{} -> {}", RcsLog.randomInt(), agvId, taskAct, taskParam);
+        RcsLog.algorithmLog.info("{} {} 获取到配置的动参数据：{} -> {}", RcsLog.randomInt(), agvId, taskAct, taskParam);
+        return checkMap;
+    }
+
+    /**
+     * 解析调度动作参数
+     *
+     * @param agvId    AGV编号
+     * @param key      配置键
+     * @param value    配置值
+     * @param checkMap 结果 Map
+     * @return 动作参数
+     */
+    private static Map<String, Integer> parseRcsActionParameter(String agvId, String key, String value, Map<String, Integer> checkMap) {
+        String[] strings = value.split(",");
+        if (strings.length != 2) {
+            RcsLog.consoleLog.error("{} {} 动参格式错误：{}", RcsLog.randomInt(), agvId, value);
+            RcsLog.taskLog.error("{} {} 动参格式错误：{}", RcsLog.randomInt(), agvId, value);
+            RcsLog.algorithmLog.error("{} {} 动参格式错误：{}", RcsLog.randomInt(), agvId, value);
+            return null;
+        }
+        checkMap.put(ACTION_KEY, Integer.parseInt(strings[0]));
+        checkMap.put(PARAMETER_KEY, Integer.parseInt(strings[1]));
+        RcsLog.consoleLog.info("{} {} 获取到配置的动参数据：{} -> {}", RcsLog.randomInt(), agvId, key, value);
+        RcsLog.taskLog.info("{} {} 获取到配置的动参数据：{} -> {}", RcsLog.randomInt(), agvId, key, value);
+        RcsLog.algorithmLog.info("{} {} 获取到配置的动参数据：{} -> {}", RcsLog.randomInt(), agvId, key, value);
+        return checkMap;
+    }
+
+    // ================== 6. 地图加载逻辑 ==================
 
     /**
      * 运行时异步热更新
@@ -771,6 +1118,13 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
         }
     }
 
+    /**
+     * 判断两个快照是否相同
+     *
+     * @param newSnap 新快照
+     * @param oldSnap 旧快照
+     * @return 是否相同
+     */
     private boolean isSameVersion(MapSnapshot newSnap, MapSnapshot oldSnap) {
         if (oldSnap == null || oldSnap.versionMd5() == null) {
             return false;

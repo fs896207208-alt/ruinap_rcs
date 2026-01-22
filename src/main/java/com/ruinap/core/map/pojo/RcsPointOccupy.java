@@ -1,12 +1,16 @@
 package com.ruinap.core.map.pojo;
 
 import com.ruinap.core.map.enums.PointOccupyTypeEnum;
+import com.ruinap.infra.framework.core.event.point.RcsPointOccupyChangeEvent;
+import com.ruinap.infra.framework.util.SpringContextHolder;
 import com.ruinap.infra.lock.RcsLock;
+import com.ruinap.infra.log.RcsLog;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.Map;
@@ -64,6 +68,8 @@ public class RcsPointOccupy implements Serializable {
     public void setOccupied(String deviceCode, PointOccupyTypeEnum type) {
         // 写操作必须拿到锁
         lock.runInWrite(() -> setOccupiedInternal(deviceCode, type));
+        // 2. 发送通知 (锁外执行，性能更好)
+        publishChangeEvent(pointId, deviceCode, type, RcsPointOccupyChangeEvent.ChangeType.OCCUPIED);
     }
 
     /**
@@ -97,7 +103,12 @@ public class RcsPointOccupy implements Serializable {
         });
 
         // 必须是“拿到了锁”且“内部逻辑执行成功”才算成功
-        return acquired && success.get();
+        boolean result = acquired && success.get();
+        // 3. 只有确实成功占用，才发送通知
+        if (result) {
+            publishChangeEvent(pointId, deviceCode, type, RcsPointOccupyChangeEvent.ChangeType.OCCUPIED);
+        }
+        return result;
     }
 
     /**
@@ -130,7 +141,12 @@ public class RcsPointOccupy implements Serializable {
             }
         });
 
-        return changed.get();
+        boolean result = changed.get();
+        // 只有状态发生改变（避免重复释放发消息），才发布事件
+        if (result) {
+            publishChangeEvent(pointId, deviceCode, type, RcsPointOccupyChangeEvent.ChangeType.RELEASED);
+        }
+        return result;
     }
 
     /**
@@ -201,10 +217,33 @@ public class RcsPointOccupy implements Serializable {
      * Java 原生序列化机制会自动调用此方法
      */
     @Serial
-    private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         // 1. 恢复默认数据
         in.defaultReadObject();
         // 2. 恢复锁对象 (关键！)
         this.lock = RcsLock.ofReentrant();
+    }
+
+    /**
+     * 辅助方法：安全发布事件
+     *
+     * @param pointId    点位
+     * @param deviceCode 设备编号
+     * @param type       占用类型
+     * @param changeType 改变类型
+     */
+    private void publishChangeEvent(Integer pointId, String deviceCode, PointOccupyTypeEnum type, RcsPointOccupyChangeEvent.ChangeType changeType) {
+        try {
+            SpringContextHolder.publishEvent(new RcsPointOccupyChangeEvent(
+                    this,
+                    pointId,
+                    deviceCode,
+                    type,
+                    changeType
+            ));
+        } catch (Exception e) {
+            // 不让事件通知的异常影响核心业务流程（如锁的释放）
+            RcsLog.algorithmLog.error("事件发布异常", e);
+        }
     }
 }

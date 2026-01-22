@@ -1,14 +1,19 @@
 package com.ruinap.adapter.communicate.client.handler.impl;
 
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import com.ruinap.adapter.communicate.base.ClientAttribute;
 import com.ruinap.adapter.communicate.base.event.AbstractClientEvent;
 import com.ruinap.adapter.communicate.client.handler.ClientHandler;
 import com.ruinap.adapter.communicate.client.registry.EventRegistry;
+import com.ruinap.core.equipment.manager.AgvManager;
+import com.ruinap.core.equipment.manager.ChargePileManager;
 import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.equipment.pojo.RcsChargePile;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
+import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -19,7 +24,12 @@ import io.netty.channel.ChannelHandlerContext;
  * @author qianye
  * @create 2025-05-12 09:45
  */
+@Component
 public class TcpClientHandler implements ClientHandler {
+    @Autowired
+    private AgvManager agvManager;
+    @Autowired
+    private ChargePileManager chargePileManager;
 
     /**
      * 用于处理接收到的特定类型消息。在此处理TCP帧数据
@@ -30,7 +40,7 @@ public class TcpClientHandler implements ClientHandler {
     @Override
     public void channelRead0(ChannelHandlerContext ctx, Object frame, ClientAttribute attribute) {
         //调用事件处理
-        AbstractClientEvent event = EventRegistry.getEvent(attribute.getBrand().getBrand(), attribute.getEquipmentType().getEquipmentType());
+        AbstractClientEvent event = EventRegistry.getEvent(attribute.getEquipmentType().getEquipmentType());
         event.receiveMessage(attribute, frame);
     }
 
@@ -46,15 +56,15 @@ public class TcpClientHandler implements ClientHandler {
         LinkEquipmentTypeEnum equipmentType = attribute.getEquipmentType();
         switch (equipmentType) {
             case AGV:
-                RcsAgv rcsAgv = DbCache.RCS_AGV_MAP.get(clientId);
+                RcsAgv rcsAgv = agvManager.getRcsAgvByCode(clientId);
                 rcsAgv.setAgvState(-1);
                 rcsAgv.setLight(1);
-                RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(equipmentType.getEquipmentType() + "_" + clientId, "AGV连接失败次数过多，设置为离线状态"));
+                RcsLog.consoleLog.error("{} AGV连接失败次数过多，设置为离线状态", StrUtil.format("{}_{}", equipmentType.getEquipmentType(), clientId));
                 break;
             case CHARGE_PILE:
-                RcsChargePile rcsChargePile = DbCache.RCS_CHARGE_MAP.get(clientId);
+                RcsChargePile rcsChargePile = chargePileManager.getRcsChargePileByCode(clientId);
                 rcsChargePile.setState(0);
-                RcsLog.consoleLog.error(RcsLog.formatTemplateRandom(equipmentType.getEquipmentType() + "_" + clientId, "充电桩连接失败次数过多，设置为离线状态"));
+                RcsLog.consoleLog.error("{} 充电桩连接失败次数过多，设置为离线状态", StrUtil.format("{}_{}", equipmentType.getEquipmentType(), clientId));
                 break;
             case TRANSFER:
                 RcsLog.consoleLog.warn("中转系统连接失败，正在继续尝试连接");
@@ -102,8 +112,8 @@ public class TcpClientHandler implements ClientHandler {
         //如果客户端ID不为空，则记录客户端上下文
         if (clientId != null && !clientId.isEmpty()) {
             // 连接建立时触发
-            RcsLog.consoleLog.info(RcsLog.formatTemplateRandom(clientId, "已连接到 " + attribute.getProtocol().getProtocol() + " 服务器: " + ctx.channel().remoteAddress()));
-            RcsLog.communicateLog.info(RcsLog.formatTemplateRandom(clientId, "已连接到 " + attribute.getProtocol().getProtocol() + " 服务器: " + ctx.channel().remoteAddress()));
+            RcsLog.consoleLog.info("{} 已连接到 {} 服务器: {}", clientId, attribute.getProtocol().getProtocol(), ctx.channel().remoteAddress());
+            RcsLog.communicateLog.info("{} 已连接到 {} 服务器: {}", clientId, attribute.getProtocol().getProtocol(), ctx.channel().remoteAddress());
         }
     }
 

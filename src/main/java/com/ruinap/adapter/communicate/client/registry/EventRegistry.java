@@ -2,8 +2,8 @@ package com.ruinap.adapter.communicate.client.registry;
 
 
 import com.ruinap.adapter.communicate.base.event.AbstractClientEvent;
+import com.ruinap.adapter.communicate.event.AgvWebSocketClientEvent;
 import com.ruinap.adapter.communicate.event.ChargePileTcpEvent;
-import com.ruinap.adapter.communicate.event.SlamoptoAgvWebSocketClientEvent;
 import com.ruinap.adapter.communicate.event.TransferWebSocketClientEvent;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 
@@ -23,8 +23,8 @@ public class EventRegistry {
     private static final Map<String, AbstractClientEvent> REGISTRY = new ConcurrentHashMap<>();
 
     static {
-        // 注册司岚品牌事件
-        registerEvent(LinkEquipmentTypeEnum.AGV.getEquipmentType(), new SlamoptoAgvWebSocketClientEvent());
+        // 注册AGV事件
+        registerEvent(LinkEquipmentTypeEnum.AGV.getEquipmentType(), new AgvWebSocketClientEvent());
         // 注册充电桩事件
         registerEvent(LinkEquipmentTypeEnum.CHARGE_PILE.getEquipmentType(), new ChargePileTcpEvent());
         // 注册中转系统事件
@@ -36,7 +36,7 @@ public class EventRegistry {
     /**
      * 注册品牌事件
      *
-     * @param equipmentType 设备名称
+     * @param equipmentType 设备种类
      * @param event         处理器
      */
     public static void registerEvent(String equipmentType, AbstractClientEvent event) {
@@ -46,7 +46,7 @@ public class EventRegistry {
     /**
      * 获取事件处理器
      *
-     * @param equipmentType 设备名称
+     * @param equipmentType 设备种类
      * @return 事件处理器
      */
     public static AbstractClientEvent getEvent(String equipmentType) {
