@@ -209,7 +209,7 @@ public class Vda5050MqttServerHandler implements IServerHandler {
         String clientId = ctx.channel().attr(AttributeKeyEnum.CLIENT_ID.key()).get();
 
         for (MqttTopicSubscription subscription : topicSubscriptions) {
-            String topic = subscription.topicName();
+            String topic = subscription.topicFilter();
             MqttQoS qos = subscription.qualityOfService();
 
             // 记录订阅关系

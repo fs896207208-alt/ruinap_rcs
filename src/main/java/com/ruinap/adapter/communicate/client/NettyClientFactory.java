@@ -100,18 +100,6 @@ public class NettyClientFactory {
                 continue;
             }
 
-            //品牌
-            String brand = value.get("brand");
-            if (brand == null || brand.isEmpty()) {
-                RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "AGV配置缺少品牌数据");
-                continue;
-            }
-            BrandEnum brandEnum = BrandEnum.fromBrand(brand);
-            if (brandEnum == null) {
-                RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "AGV配置的品牌 [" + brand + "] 获取不到枚举数据");
-                continue;
-            }
-
             //设备种类
             String equipmentType = value.get("equipment_type");
             if (equipmentType == null || equipmentType.isEmpty()) {
@@ -245,15 +233,16 @@ public class NettyClientFactory {
                     RcsLog.algorithmLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "ChargePile配置的通信协议 [" + pact + "] 获取不到通信协议选项数据");
                     continue;
                 }
-                ClientHandler clientHandler = PROTOCOL_HANDLER_MAP.get(linkEquipmentTypeEnum);
-                if (clientHandler == null) {
-                    RcsLog.algorithmLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "ChargePile配置的设备种类 [" + linkEquipmentTypeEnum + "] 获取不到处理器数据");
+
+                Supplier<ClientHandler> handlerSupplier = PROTOCOL_HANDLER_FACTORY.get(linkEquipmentTypeEnum);
+                if (handlerSupplier == null) {
+                    RcsLog.algorithmLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "ChargePile配置的设备种类 [" + linkEquipmentTypeEnum + "] 获取不到处理器工厂");
                     continue;
                 }
 
                 // 创建任务生成器
                 Supplier<CompletableFuture<Void>> taskSupplier = asyncService.runAsync(() -> {
-                    startClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, clientHandler);
+                    startClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get());
                 });
                 // 添加任务
                 tasks.add(taskSupplier);
@@ -324,15 +313,16 @@ public class NettyClientFactory {
                 RcsLog.algorithmLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "Transfer配置的通信协议 [" + pact + "] 获取不到通信协议选项数据");
                 return;
             }
-            ClientHandler clientHandler = PROTOCOL_HANDLER_MAP.get(linkEquipmentTypeEnum);
-            if (clientHandler == null) {
-                RcsLog.algorithmLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "Transfer配置的设备种类 [" + linkEquipmentTypeEnum + "] 获取不到处理器数据");
+
+            Supplier<ClientHandler> handlerSupplier = PROTOCOL_HANDLER_FACTORY.get(linkEquipmentTypeEnum);
+            if (handlerSupplier == null) {
+                RcsLog.algorithmLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), "Transfer配置的设备种类 [" + linkEquipmentTypeEnum + "] 获取不到处理器工厂");
                 return;
             }
 
             // 创建任务生成器
             Supplier<CompletableFuture<Void>> taskSupplier = asyncService.runAsync(() -> {
-                startClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, clientHandler);
+                startClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get());
             });
             // 添加任务
             tasks.add(taskSupplier);
