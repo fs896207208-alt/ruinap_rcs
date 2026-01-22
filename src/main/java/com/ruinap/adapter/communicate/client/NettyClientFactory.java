@@ -359,7 +359,7 @@ public class NettyClientFactory {
      */
     private CompletableFuture<Boolean> startClient(ProtocolEnum protocol, IProtocolOption protocolOption, URI uri, LinkEquipmentTypeEnum equipmentType, String clientId, String connectFailed, ClientHandler handler) {
         //创建客户端属性
-        ClientAttribute clientAttribute = new ClientAttribute(uri, clientId, connectFailed, equipmentType, protocol, protocolOption, handler);
+        ClientAttribute clientAttribute = new ClientAttribute(uri, clientId, equipmentType, connectFailed, protocolOption, protocol, handler);
         //启动客户端
         return new NettyClient(clientAttribute, taskDispatcher, coreYaml, alarmManager, vthreadPool).start();
     }
