@@ -2,10 +2,9 @@ package com.ruinap.adapter.communicate.base;
 
 import com.ruinap.adapter.communicate.base.protocol.IProtocolOption;
 import com.ruinap.adapter.communicate.server.NettyServer;
+import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
-import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.log.RcsLog;
-import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.EventLoopGroup;
 import lombok.Getter;
@@ -19,43 +18,32 @@ import lombok.Setter;
  */
 @Setter
 @Getter
-public class ServerAttribute {
-
-    @Autowired
-    private VthreadPool vthreadPool;
+public class ServerAttribute extends BaseAttribute {
 
     /**
      * 端口
      */
     private Integer port;
     /**
-     * 协议枚举
+     * 设备类型 (非必需)
      */
-    private ProtocolEnum protocol;
-    /**
-     * 协议处理器
-     */
-    private IProtocolOption<ServerBootstrap, NettyServer> protocolOption;
+    private LinkEquipmentTypeEnum equipmentType;
     /**
      * 主线程组，处理连接请求
      */
     private final EventLoopGroup bossGroup = NettyGlobalResources.getBossGroup();
-    /**
-     * 工作线程组，处理I/O操作
-     * 默认CPU核心数*2
-     */
-    private EventLoopGroup workerGroup = NettyGlobalResources.getWorkerGroup();
 
-    /**
-     * 事件处理器
-     */
-//    private IServerHandler eventHandler;
     public ServerAttribute(IProtocolOption<ServerBootstrap, NettyServer> protocolOption, Integer port, ProtocolEnum protocol) {
+        // 调用基类构造
+        super(protocol, protocolOption);
         this.port = port;
-        this.protocol = protocol;
-        this.protocolOption = protocolOption;
         if (protocolOption == null) {
             RcsLog.consoleLog.error("请设置协议处理器");
         }
+    }
+
+    public ServerAttribute(IProtocolOption<ServerBootstrap, NettyServer> protocolOption, Integer port, ProtocolEnum protocol, LinkEquipmentTypeEnum equipmentType) {
+        this(protocolOption, port, protocol);
+        this.equipmentType = equipmentType;
     }
 }

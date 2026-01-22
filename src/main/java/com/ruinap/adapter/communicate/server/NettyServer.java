@@ -10,6 +10,7 @@ import com.ruinap.adapter.communicate.server.registry.ServerHandlerRegistry;
 import com.ruinap.core.business.AlarmManager;
 import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
+import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.enums.netty.ServerRouteEnum;
 import com.ruinap.infra.log.RcsLog;
@@ -152,6 +153,13 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             b.childHandler(new ChannelInitializer<>() {
                 @Override
                 protected void initChannel(Channel ch) {
+                    LinkEquipmentTypeEnum equipmentType = attribute.getEquipmentType();
+                    if (equipmentType != null) {
+                        // 注意：这里假设你已经在 AttributeKeyEnum 中补充了 EQUIPMENT_TYPE
+                        // 如果没有，可以用 AttributeKey.valueOf("EQUIPMENT_TYPE")
+                        ch.attr(AttributeKeyEnum.EQUIPMENT_TYPE.key()).set(equipmentType.getEquipmentType());
+                    }
+
                     ChannelPipeline pipeline = ch.pipeline();
                     // 调用 Protocol 接口的方法获取 Handler 列表，并添加到 Pipeline 中
                     attribute.getProtocolOption().createHandlers(pipeline, NettyServer.this);

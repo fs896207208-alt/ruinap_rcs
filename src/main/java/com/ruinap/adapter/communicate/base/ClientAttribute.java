@@ -1,15 +1,14 @@
 package com.ruinap.adapter.communicate.base;
 
+import com.ruinap.adapter.communicate.base.handler.IBaseClientHandler;
 import com.ruinap.adapter.communicate.base.protocol.IProtocolOption;
 import com.ruinap.adapter.communicate.client.NettyClient;
-import com.ruinap.adapter.communicate.client.handler.ClientHandler;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.EventLoopGroup;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -29,76 +28,63 @@ import java.util.concurrent.atomic.AtomicLong;
 @Setter
 @Getter
 @Component
-public class ClientAttribute {
+public class ClientAttribute extends BaseAttribute {
 
     /**
      * WebSocket 服务器地址
      */
     private final URI uri;
     /**
-     * 协议枚举
+     * 客户端 ID
      */
-    private ProtocolEnum protocol;
-    /**
-     * 协议处理器
-     */
-    private IProtocolOption<Bootstrap, NettyClient> protocolOption;
+    private final String clientId;
     /**
      * 设备类型枚举
      */
     private LinkEquipmentTypeEnum equipmentType;
     /**
-     * 客户端 ID
-     */
-    private final String clientId;
-    /**
      * 连接失败次数
      */
     private final String maxConnectFailed;
     /**
-     * 工作线程组，处理I/O操作
-     */
-    private EventLoopGroup workerGroup = NettyGlobalResources.getWorkerGroup();
-    /**
      * 客户端处理器
      */
-    private ClientHandler handler;
+    private IBaseClientHandler handler;
     /**
      * 存储客户端连接上下文
      */
     private ChannelHandlerContext context;
     /**
-     * 全局 Map，用于存储客户端 ID 和对应的 CompletableFuture
+     * 全局 Map，用于存储客户端 ID 和对应的 异步结果集
      */
     @Setter(AccessLevel.NONE)
     private Map<String, TypedFuture<?>> futures = new ConcurrentHashMap<>();
     /**
      * 存储客户端请求ID
      */
-    private AtomicLong requestId = new AtomicLong(0L);
+    private AtomicLong requestId = new AtomicLong(0);
 
     /**
      * 构造方法
      *
      * @param uri              地址
      * @param clientId         客户端ID (请确保唯一)
-     * @param maxConnectFailed 最大连接失败次数
      * @param equipmentType    设备类型枚举
+     * @param maxConnectFailed 最大连接失败次数
      * @param protocol         协议枚举
      * @param protocolOption   协议处理器
      * @param handler          客户端处理器
      */
-    public ClientAttribute(URI uri, String clientId, String maxConnectFailed, LinkEquipmentTypeEnum equipmentType, ProtocolEnum protocol, IProtocolOption<Bootstrap, NettyClient> protocolOption, ClientHandler handler) {
+    public ClientAttribute(URI uri, String clientId, LinkEquipmentTypeEnum equipmentType, String maxConnectFailed,
+                           IProtocolOption<Bootstrap, NettyClient> protocolOption,
+                           ProtocolEnum protocol, IBaseClientHandler handler) {
+        // 调用基类构造
+        super(protocol, protocolOption);
         this.uri = uri;
         this.clientId = clientId;
-        this.maxConnectFailed = maxConnectFailed;
         this.equipmentType = equipmentType;
-        this.protocol = protocol;
-        this.protocolOption = protocolOption;
+        this.maxConnectFailed = maxConnectFailed;
         this.handler = handler;
-        if (protocolOption == null) {
-            RcsLog.consoleLog.error("请设置协议处理器");
-        }
     }
 
     /**

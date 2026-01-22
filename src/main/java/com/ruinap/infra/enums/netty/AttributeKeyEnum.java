@@ -29,7 +29,12 @@ public enum AttributeKeyEnum {
     /**
      * 路径
      */
-    PATH(AttributeKey.valueOf("path"));
+    PATH(AttributeKey.valueOf("path")),
+
+    /**
+     * 设备类型
+     */
+    EQUIPMENT_TYPE(AttributeKey.valueOf("EQUIPMENT_TYPE"));
 
     /**
      * 存储 Netty 的 AttributeKey 对象
