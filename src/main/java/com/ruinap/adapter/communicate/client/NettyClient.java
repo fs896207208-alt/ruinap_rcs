@@ -119,7 +119,9 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
     @Override
     public void shutdown() {
         //由于线程组是单例的，所以不需要在此释放资源
-        attribute.getContext().close();
+        if (attribute.getContext() != null) {
+            attribute.getContext().close();
+        }
     }
 
     /**

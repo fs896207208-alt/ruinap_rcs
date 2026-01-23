@@ -154,6 +154,8 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
                         //在初始化时绑定设备类型到 Channel 属性，方便后续获取
                         ch.attr(AttributeKeyEnum.EQUIPMENT_TYPE.key()).set(equipmentType.getEquipmentType());
                     }
+                    // 设置协议属性
+                    ch.attr(AttributeKeyEnum.PROTOCOL.key()).set(attribute.getProtocol().getProtocol());
 
                     ChannelPipeline pipeline = ch.pipeline();
                     // 调用 Protocol 接口的方法获取 Handler 列表，并添加到 Pipeline 中
