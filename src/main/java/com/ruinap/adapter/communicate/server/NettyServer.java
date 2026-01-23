@@ -13,6 +13,8 @@ import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.enums.netty.ServerRouteEnum;
+import com.ruinap.infra.framework.core.event.netty.NettyConnectionEvent;
+import com.ruinap.infra.framework.util.SpringContextHolder;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.ServerBootstrap;
@@ -21,7 +23,6 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,13 +52,6 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
     @Getter
     private final ServerAttribute attribute;
 
-    // ================== 静态注册表 (仅用于查找 Server 实例) ==================
-    /**
-     * 存储服务端对象
-     */
-    @Getter
-    private static final Map<String, NettyServer> SERVERS = new ConcurrentHashMap<>();
-
     // ================== 实例级状态 (每个端口独享) ==================
     /**
      * 存储服务端路径连接
@@ -85,7 +79,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
     private final Map<String, AtomicLong> requestIds = new ConcurrentHashMap<>();
 
     /**
-     * 服务端构造函数 - [修改说明] 强制注入依赖
+     * 服务端构造函数
      *
      * @param attribute       属性
      * @param handlerRegistry 处理器注册表
@@ -157,8 +151,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
                 protected void initChannel(Channel ch) {
                     LinkEquipmentTypeEnum equipmentType = attribute.getEquipmentType();
                     if (equipmentType != null) {
-                        // 注意：这里假设你已经在 AttributeKeyEnum 中补充了 EQUIPMENT_TYPE
-                        // 如果没有，可以用 AttributeKey.valueOf("EQUIPMENT_TYPE")
+                        //在初始化时绑定设备类型到 Channel 属性，方便后续获取
                         ch.attr(AttributeKeyEnum.EQUIPMENT_TYPE.key()).set(equipmentType.getEquipmentType());
                     }
 
@@ -170,9 +163,6 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
 
             // 绑定端口并启动服务器
             ChannelFuture future = b.bind(attribute.getPort()).sync();
-            //获取协议字符串
-            String protocolStr = attribute.getProtocol().getProtocol();
-            SERVERS.put(protocolStr, this);
             RcsLog.consoleLog.info(attribute.getProtocol() + " 服务启动成功，端口: " + attribute.getPort());
 
             // 等待服务器通道关闭
@@ -195,27 +185,6 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             server.close();
         }
         attribute.getBossGroup().shutdownGracefully();
-    }
-
-    // ================== 静态获取方法 ==================
-
-    /**
-     * 获取所有服务端
-     *
-     * @return 所有服务端
-     */
-    public static List<NettyServer> getServer() {
-        return SERVERS.values().stream().toList();
-    }
-
-    /**
-     * 获取服务端
-     *
-     * @param protocolEnum 协议枚举
-     * @return 服务端
-     */
-    public static NettyServer getServer(ProtocolEnum protocolEnum) {
-        return SERVERS.get(protocolEnum.getProtocol());
     }
 
     // ================== 业务逻辑 (操作实例变量) ==================
@@ -283,33 +252,6 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         return future;
     }
 
-    /**
-     * 发送消息给所有指定路由的服务端
-     *
-     * @param routeEnum 路由枚举
-     * @param message   消息
-     */
-    public static void sendMessageAll(ProtocolEnum protocolEnum, ServerRouteEnum routeEnum, Object message) {
-        // 1. 获取对应的 Server 实例
-        NettyServer server = getServer(protocolEnum);
-        if (server == null) {
-            RcsLog.consoleLog.warn("未找到协议 [{}] 对应的服务端实例", protocolEnum);
-            return;
-        }
-
-        // 2. 遍历该实例的连接
-        for (Map.Entry<String, String> entry : server.getPaths().entrySet()) {
-            String serverId = entry.getKey();
-            String route = entry.getValue();
-            if (route.equalsIgnoreCase(routeEnum.getRoute())) {
-                ChannelHandlerContext ctx = server.getContexts().get(serverId);
-                if (ctx != null) {
-                    ctx.writeAndFlush(server.getAttribute().getProtocolOption().wrapMessage(message));
-                }
-            }
-        }
-    }
-
     //********************************************************* Netty生命周期开始 *********************************************************
     //********************************************************* Netty生命周期开始 *********************************************************
 
@@ -349,6 +291,9 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
                 this.requestIds.putIfAbsent(serverId, new AtomicLong(0));
                 //记录日志
                 RcsLog.consoleLog.info("{} 服务端连接成功", serverId);
+
+                //发布上线事件
+                publishEvent(channel, serverId, NettyConnectionEvent.State.CONNECTED);
             }
         }
 
@@ -418,6 +363,9 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             this.paths.remove(serverId);
             this.requestIds.remove(serverId);
             RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接并清理资源", serverId));
+
+            //发布下线事件
+            publishEvent(channel, serverId, NettyConnectionEvent.State.DISCONNECTED);
         } else {
             RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接", serverId));
         }
@@ -473,4 +421,46 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
     }
     //********************************************************* Netty生命周期结束 *********************************************************
     //********************************************************* Netty生命周期结束 *********************************************************
+
+    // ================== 私有辅助方法：发布事件 ==================
+
+    /**
+     * 发布连接事件到 NettyManager
+     */
+    private void publishEvent(Channel channel, String serverId, NettyConnectionEvent.State state) {
+        // 尝试获取设备类型
+        // 1. 优先从 Channel 属性获取 (start方法里设置的)
+        LinkEquipmentTypeEnum type = null;
+        String typeStr = channel.attr(AttributeKeyEnum.EQUIPMENT_TYPE.key()).get();
+        if (typeStr != null) {
+            type = LinkEquipmentTypeEnum.fromEquipmentType(typeStr);
+        }
+
+        // 2. 如果 Channel 里没存，尝试从 ServerAttribute 获取 (端口级别的配置)
+        if (type == null && attribute.getEquipmentType() != null) {
+            type = attribute.getEquipmentType();
+        }
+
+        // 3. 如果还是没有，根据协议进行兜底推断
+        if (type == null) {
+            // VDA5050 MQTT 协议默认归类为 AGV
+            if (attribute.getProtocol() == ProtocolEnum.MQTT_SERVER) {
+                type = LinkEquipmentTypeEnum.AGV;
+            }
+        }
+
+        if (type != null && serverId != null) {
+            NettyConnectionEvent event = new NettyConnectionEvent(
+                    this,
+                    NettyConnectionEvent.ConnectSource.SERVER,
+                    type,
+                    serverId,
+                    channel,
+                    state
+            );
+            SpringContextHolder.publishEvent(event);
+        } else {
+            RcsLog.consoleLog.warn("无法发布连接事件，缺少身份信息: ID={}, Type={}", serverId, type);
+        }
+    }
 }

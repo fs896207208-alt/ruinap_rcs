@@ -10,6 +10,9 @@ import com.ruinap.infra.config.CoreYaml;
 import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
+import com.ruinap.infra.enums.netty.ProtocolEnum;
+import com.ruinap.infra.framework.core.event.netty.NettyConnectionEvent;
+import com.ruinap.infra.framework.util.SpringContextHolder;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.Bootstrap;
@@ -19,10 +22,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 
-import java.util.Collection;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -45,11 +45,6 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
      */
     @Getter
     private final ClientAttribute attribute;
-    /**
-     * 存储所有客户端
-     */
-    private static final Map<String, NettyClient> CLIENTS = new ConcurrentHashMap<>();
-
     /**
      * 存储连接失败计数器
      */
@@ -125,93 +120,6 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
     public void shutdown() {
         //由于线程组是单例的，所以不需要在此释放资源
         attribute.getContext().close();
-    }
-
-    /**
-     * 获取指定客户端
-     *
-     * @param equipmentType 设备类型
-     * @param clientId      客户端 ID
-     * @return 客户端
-     */
-    public static NettyClient getClient(String equipmentType, String clientId) {
-        String key = equipmentType + "_" + clientId;
-        return CLIENTS.get(key);
-    }
-
-    /**
-     * 获取客户端属性
-     *
-     * @param equipmentType 设备类型
-     * @param clientId      客户端 ID
-     * @return 属性
-     */
-    private static ClientAttribute getAttribute(String equipmentType, String clientId) {
-        NettyClient client = NettyClient.getClient(equipmentType, clientId);
-        return client != null ? client.getAttribute() : null;
-    }
-
-    /**
-     * 判断客户端是否在线
-     *
-     * @param equipmentType 设备种类
-     * @param clientId      客户端ID
-     * @return 是否在线 true：在线 false：不在线
-     */
-    public static boolean isClientOnline(String equipmentType, String clientId) {
-        //获取AGV属性
-        ClientAttribute clientAttribute = getAttribute(equipmentType, clientId);
-        return clientAttribute != null && clientAttribute.getContext().channel().isActive();
-    }
-
-    /**
-     * 获取客户端的计数器
-     *
-     * @param equipmentType 设备类型
-     * @param clientId      客户端ID
-     * @return 当前 +1 的计数
-     */
-    public static Long getClientCounter(String equipmentType, String clientId) {
-        //获取客户端属性
-        ClientAttribute attribute = getAttribute(equipmentType, clientId);
-        if (attribute == null) {
-            return 0L;
-        }
-        AtomicLong atomicLong = attribute.getRequestId();
-        return atomicLong != null ? atomicLong.incrementAndGet() : 0L;
-    }
-
-    /**
-     * 关闭所有客户端连接
-     *
-     * @return 关闭状态 true：关闭成功 false：关闭失败
-     */
-    public static void closeClient() {
-        //获取客户端属性
-        Collection<NettyClient> clients = CLIENTS.values();
-        for (NettyClient client : clients) {
-            if (client != null) {
-                client.shutdown();
-            }
-        }
-    }
-
-    /**
-     * 关闭客户端连接
-     *
-     * @param equipmentType 设备类型
-     * @param clientId      客户端ID
-     * @return 关闭状态 true：关闭成功 false：关闭失败
-     */
-    public static boolean closeClient(String equipmentType, String clientId) {
-        //获取客户端属性
-        NettyClient client = getClient(equipmentType, clientId);
-        if (client != null) {
-            client.shutdown();
-            return true;
-        } else {
-            return false;
-        }
     }
 
     /**
@@ -304,6 +212,31 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
             return future;
         }
     }
+
+    /**
+     * Netty连接事件
+     *
+     * @param channel 通道
+     * @param state   状态
+     */
+    private void publishEvent(Channel channel, NettyConnectionEvent.State state) {
+        NettyConnectionEvent event = new NettyConnectionEvent(
+                // source
+                this,
+                // 【身份：客户端】
+                NettyConnectionEvent.ConnectSource.CLIENT,
+                // type
+                attribute.getEquipmentType(),
+                // id
+                attribute.getClientId(),
+                // channel
+                channel,
+                // state
+                state
+        );
+        // 【使用静态工具发布】
+        SpringContextHolder.publishEvent(event);
+    }
     //********************************************************* Netty生命周期开始 *********************************************************
     //********************************************************* Netty生命周期开始 *********************************************************
 
@@ -323,7 +256,10 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
             this.failedCounter.set(0);
             //添加到客户端列表
             String key = StrUtil.format("{}_{}", attribute.getEquipmentType().getEquipmentType(), clientId);
-            CLIENTS.put(key, this);
+            // 如果是纯 TCP 协议，连接建立即视为上线。
+            if (attribute.getProtocol() == ProtocolEnum.TCP_CLIENT) {
+                publishEvent(ctx.channel(), NettyConnectionEvent.State.CONNECTED);
+            }
             // 将客户端上下文存储到全局 Map 中
             attribute.setContext(ctx);
             attribute.setRequestId(new AtomicLong(0));
@@ -358,7 +294,8 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
                 int count = this.failedCounter.incrementAndGet();
                 //添加到客户端列表
                 String key = attribute.getEquipmentType().getEquipmentType() + "_" + clientId;
-                CLIENTS.put(key, this);
+                // WebSocket 握手成功，发布上线事件
+                publishEvent(ctx.channel(), NettyConnectionEvent.State.CONNECTED);
                 // 将客户端上下文存储到全局 Map 中
                 attribute.setContext(ctx);
                 attribute.setRequestId(new AtomicLong(0));
@@ -420,8 +357,8 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
         if (clientId != null && !clientId.isEmpty()) {
             // 删除客户端上下文
             attribute.setContext(null);
-            String key = equipmentType + "_" + clientId;
-            CLIENTS.remove(key);
+            // 【关键策略】断开即下线
+            publishEvent(ctx.channel(), NettyConnectionEvent.State.DISCONNECTED);
             attribute.setRequestId(new AtomicLong(0L));
             //记录日志
             if (LinkEquipmentTypeEnum.isEnumByCode(LinkEquipmentTypeEnum.AGV, equipmentType)) {
