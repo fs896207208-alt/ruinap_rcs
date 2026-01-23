@@ -1,7 +1,6 @@
 package com.ruinap.adapter.communicate.server.protocol;
 
 import cn.hutool.json.JSONObject;
-import com.ruinap.adapter.communicate.base.ServerAttribute;
 import com.ruinap.adapter.communicate.base.protocol.IProtocolOption;
 import com.ruinap.adapter.communicate.server.NettyServer;
 import com.ruinap.adapter.communicate.server.handler.IdleEventHandler;
@@ -64,15 +63,12 @@ public class MqttOption implements IProtocolOption<ServerBootstrap, NettyServer>
         pipeline.addLast("mqtt-encoder", MqttEncoder.INSTANCE);
         pipeline.addLast("idle-handler", new IdleStateHandler(1, 1, 1, TimeUnit.HOURS));
         pipeline.addLast(new IdleEventHandler());
-
-        //获取协议
-        ProtocolEnum protocol = server.getAttribute().getProtocol();
-        //判断路由是否匹配
-        if (ServerAttribute.ROUTES.containsKey(protocol.getProtocol())) {
+        
+        try {
             pipeline.addLast(server);
-        } else {
-            RcsLog.consoleLog.error("MQTT 服务器未找到匹配路径的处理器: " + protocol.getProtocol());
-            throw new RuntimeException("MQTT 服务器未找到匹配路径的处理器: " + protocol.getProtocol());
+        } catch (Exception e) {
+            RcsLog.consoleLog.error("添加 MQTT 业务处理器失败", e);
+            throw new RuntimeException("添加 MQTT 业务处理器失败", e);
         }
     }
 

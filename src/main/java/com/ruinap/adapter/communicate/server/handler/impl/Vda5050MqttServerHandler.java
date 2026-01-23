@@ -64,10 +64,10 @@ public class Vda5050MqttServerHandler implements IServerHandler {
             try {
                 switch (messageType) {
                     case CONNECT:
-                        handleConnect(ctx, (MqttConnectMessage) mqttMessage);
+                        handleConnect(ctx, (MqttConnectMessage) mqttMessage, attribute);
                         break;
                     case PUBLISH:
-                        handlePublish(ctx, (MqttPublishMessage) mqttMessage);
+                        handlePublish(ctx, (MqttPublishMessage) mqttMessage, attribute);
                         break;
                     case SUBSCRIBE:
                         handleSubscribe(ctx, (MqttSubscribeMessage) mqttMessage);
@@ -104,35 +104,52 @@ public class Vda5050MqttServerHandler implements IServerHandler {
      * 处理客户端连接请求
      * 包含互斥登录逻辑：如果相同ID已存在，则踢掉旧连接
      */
-    private void handleConnect(ChannelHandlerContext ctx, MqttConnectMessage msg) {
+    private void handleConnect(ChannelHandlerContext ctx, MqttConnectMessage msg, ServerAttribute attribute) {
         String clientId = msg.payload().clientIdentifier();
+
+        // 1. 校验 ClientID
         if (StrUtil.isBlank(clientId)) {
-            RcsLog.consoleLog.warn("客户端连接失败: ClientID为空, 地址: {}", ctx.channel().remoteAddress());
             sendConnAck(ctx, MqttConnectReturnCode.CONNECTION_REFUSED_IDENTIFIER_REJECTED);
             ctx.close();
             return;
         }
 
-        // 检测并关闭旧连接，防止连接冲突
+        // 2. 【核心修复】获取当前 Server 实例
+        NettyServer server = NettyServer.getServer(attribute.getProtocol());
+        if (server == null) {
+            RcsLog.consoleLog.error("严重错误: 无法找到协议 [{}] 对应的 NettyServer 实例", attribute.getProtocol());
+            ctx.close();
+            return;
+        }
+
+        // 3. 处理旧连接 (剔除重复登录)
+        // 使用 server.getContexts() 替代 NettyServer.getCONTEXTS()
         String oldChannelId = CLIENT_ID_TO_CHANNEL_ID.get(clientId);
         if (oldChannelId != null) {
-            ChannelHandlerContext oldCtx = NettyServer.getCONTEXTS().get(oldChannelId);
+            ChannelHandlerContext oldCtx = server.getContexts().get(oldChannelId);
             if (oldCtx != null) {
-                RcsLog.consoleLog.warn("检测到客户端ID冲突 [{}], 正在关闭旧连接 [{}]", clientId, oldChannelId);
-                // 移除旧连接的ClientID标识，避免handlerRemoved误删新连接数据
-                oldCtx.channel().attr(AttributeKeyEnum.CLIENT_ID.key()).set(null);
+                RcsLog.consoleLog.warn("Client ID 冲突，踢出旧连接: {}", clientId);
                 oldCtx.close();
             }
         }
 
-        // 注册新连接信息
-        ctx.channel().attr(AttributeKeyEnum.CLIENT_ID.key()).set(clientId);
+        // 4. 注册新连接
         String newChannelId = ctx.channel().id().asShortText();
+        String fullChannelId = ctx.channel().id().toString();
 
-        NettyServer.getCONTEXTS().put(newChannelId, ctx);
+        // 必须同时存入 contexts 和 channelIds
+        // 1) 存入连接池 (用于发送消息)
+        server.getContexts().put(newChannelId, ctx);
+        // 2) 存入 ID 映射 (用于 NettyServer.handlerRemoved 清理和监控)
+        server.getChannelIds().put(fullChannelId, newChannelId);
+
+        // 维护 Handler 内部映射
         CLIENT_ID_TO_CHANNEL_ID.put(clientId, newChannelId);
+        // 绑定 Channel 属性
+        ctx.channel().attr(AttributeKeyEnum.CLIENT_ID.key()).set(clientId);
+        RcsLog.consoleLog.info("MQTT Client 连接成功: {}", clientId);
 
-        RcsLog.consoleLog.info("MQTT客户端已连接: [{}], 地址: [{}]", clientId, ctx.channel().remoteAddress());
+        // 5. 发送连接确认 (CONNACK)
         sendConnAck(ctx, MqttConnectReturnCode.CONNECTION_ACCEPTED);
     }
 
@@ -140,7 +157,7 @@ public class Vda5050MqttServerHandler implements IServerHandler {
      * 处理消息发布请求
      * 包含零拷贝转发逻辑
      */
-    private void handlePublish(ChannelHandlerContext ctx, MqttPublishMessage msg) {
+    private void handlePublish(ChannelHandlerContext ctx, MqttPublishMessage msg, ServerAttribute attribute) {
         String topicName = msg.variableHeader().topicName();
         ByteBuf payload = msg.payload();
         MqttQoS publishQoS = msg.fixedHeader().qosLevel();
@@ -158,19 +175,25 @@ public class Vda5050MqttServerHandler implements IServerHandler {
             return;
         }
 
+        // 【核心修复】获取当前 Server 实例
+        NettyServer server = NettyServer.getServer(attribute.getProtocol());
+        if (server == null) {
+            return;
+        }
+
         // 3. 深拷贝 Payload
         // 将 ByteBuf 数据读取到普通的 byte 数组中
         // 这样就彻底解耦了 Netty 的内存管理，后续可以安全地在任何线程使用
         byte[] dataCopy = new byte[payload.readableBytes()];
         payload.getBytes(payload.readerIndex(), dataCopy);
-        
+
         matchedSubscribers.forEach((subscriberChannelId, subscribeQoS) -> {
             // 不转发给自己
             if (subscriberChannelId.equals(ctx.channel().id().asShortText())) {
                 return;
             }
 
-            ChannelHandlerContext subCtx = NettyServer.getCONTEXTS().get(subscriberChannelId);
+            ChannelHandlerContext subCtx = server.getContexts().get(subscriberChannelId);
             if (subCtx != null && subCtx.channel().isActive()) {
                 MqttQoS finalQoS = (publishQoS.value() < subscribeQoS.value()) ? publishQoS : subscribeQoS;
 
@@ -307,7 +330,10 @@ public class Vda5050MqttServerHandler implements IServerHandler {
         String channelId = ctx.channel().id().asShortText();
         String clientId = ctx.channel().attr(AttributeKeyEnum.CLIENT_ID.key()).get();
 
-        NettyServer.getCONTEXTS().remove(channelId);
+        NettyServer server = NettyServer.getServer(attribute.getProtocol());
+        if (server != null) {
+            server.getContexts().remove(channelId);
+        }
 
         // 仅移除当前连接的映射，防止误删新建立的连接映射
         if (clientId != null) {

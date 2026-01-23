@@ -1,7 +1,6 @@
 package com.ruinap.adapter.communicate.server.protocol;
 
 import cn.hutool.json.JSONObject;
-import com.ruinap.adapter.communicate.base.ServerAttribute;
 import com.ruinap.adapter.communicate.base.protocol.IProtocolOption;
 import com.ruinap.adapter.communicate.server.NettyServer;
 import com.ruinap.adapter.communicate.server.handler.IdleEventHandler;
@@ -145,8 +144,8 @@ public class WebSocketOption implements IProtocolOption<ServerBootstrap, NettySe
                 String path = uri.substring(0, uri.lastIndexOf('/'));
                 //获取协议
                 ProtocolEnum protocol = server.getAttribute().getProtocol();
-                //判断路由是否匹配
-                if (ServerAttribute.ROUTES.containsKey(protocol.getProtocol() + path)) {
+                //使用 server 实例的 Registry 检查路径是否有效
+                if (server.getHandlerRegistry().getHandler(protocol, path) != null) {
                     // 将服务端ID存储到 Channel 的 AttributeKey 中
                     ctx.channel().attr(AttributeKeyEnum.SERVER_ID.key()).set(serverId);
                     ctx.channel().attr(AttributeKeyEnum.PATH.key()).set(path);

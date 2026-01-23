@@ -91,36 +91,41 @@ public class BusinessWebSocketHandler implements IServerHandler {
         JSONObject jsonObject = new JSONObject();
         // 监听握手完成事件
         if (evt instanceof WebSocketServerProtocolHandler.HandshakeComplete) {
-            // 从 Channel 的 AttributeKey 中获取服务端ID
             String serverId = ctx.channel().attr(AttributeKeyEnum.SERVER_ID.key()).get();
-
-            // 获取服务端通道ID
             String id = ctx.channel().id().toString();
             JSONObject entries = new JSONObject();
-            if (NettyServer.getCONTEXTS().containsKey(serverId)) {
-                if (!NettyServer.getCHANNEL_IDS().containsKey(id)) {
+
+            // 1. 获取当前 NettyServer 实例
+            NettyServer server = NettyServer.getServer(attribute.getProtocol());
+            if (server == null) {
+                RcsLog.consoleLog.error("无法获取 NettyServer 实例: {}", attribute.getProtocol());
+                ctx.close();
+                return null;
+            }
+
+            // 2. 使用实例方法 getContexts() 和 getChannelIds()
+            if (server.getContexts().containsKey(serverId)) {
+                if (!server.getChannelIds().containsKey(id)) {
                     entries.set("event", "comm_fail");
                     entries.set("msg", "服务端 [" + serverId + "] 已连接到系统，因此你的连接被拒绝");
-                    // 发送提示消息并在发送完成后关闭连接
-                    // 握手完成后发送消息
+
                     ctx.writeAndFlush(new TextWebSocketFrame(entries.toString()))
                             .addListener(future -> {
                                 if (future.isSuccess()) {
                                     RcsLog.consoleLog.error("{} 服务端已连接到系统，因此你的连接被拒绝", serverId);
                                     ctx.close();
                                 } else {
-                                    // 将异常传递给 exceptionCaught
                                     ctx.fireExceptionCaught(future.cause());
                                 }
                             });
                 }
             } else {
                 if (protocol == null) {
-                    //设置协议
                     protocol = attribute.getProtocol();
                 }
                 entries.set("event", "comm_success");
                 entries.set("msg", "Business服务端【" + serverId + "】连接成功，欢迎使用调度系统业务端");
+
                 Integer taskGroupKey = null;
                 try {
                     Entity configValue = configDB.getConfigValue("sys.task.key");

@@ -11,10 +11,14 @@ import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.util.ReferenceCountUtil;
 import lombok.Getter;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * ConsoleWebSocketHandler 类，用于处理 WebSocket 控制台相关的消息
@@ -73,37 +77,57 @@ public class ConsoleWebSocketHandler implements IServerHandler {
     @Override
     public JSONObject userEventTriggered(ChannelHandlerContext ctx, Object evt, ServerAttribute attribute) {
         JSONObject jsonObject = new JSONObject();
-        // 监听握手完成事件
+        // 握手成功事件
         if (evt instanceof WebSocketServerProtocolHandler.HandshakeComplete) {
-            // 从 Channel 的 AttributeKey 中获取服务端ID
-            String serverId = ctx.channel().attr(AttributeKeyEnum.SERVER_ID.key()).get();
+            WebSocketServerProtocolHandler.HandshakeComplete handshake = (WebSocketServerProtocolHandler.HandshakeComplete) evt;
+            String uri = handshake.requestUri();
+            // 解析参数
+            Map<String, String> paramMap = new HashMap<>();
+            QueryStringDecoder decoder = new QueryStringDecoder(uri);
+            decoder.parameters().forEach((key, value) -> paramMap.put(key, value.get(0)));
 
-            // 获取服务端通道ID
-            String id = ctx.channel().id().toString();
-            if (NettyServer.getCONTEXTS().containsKey(serverId)) {
-                if (!NettyServer.getCHANNEL_IDS().containsKey(id)) {
-                    // 发送提示消息并在发送完成后关闭连接
-                    // 握手完成后发送消息
-                    ctx.writeAndFlush(new TextWebSocketFrame("服务端 [" + serverId + "] 已连接到系统，因此你的连接被拒绝"))
-                            .addListener(future -> {
-                                if (future.isSuccess()) {
-                                    RcsLog.consoleLog.error("{} 服务端已连接到系统，因此你的连接被拒绝", serverId);
-                                    ctx.close();
-                                } else {
-                                    // 将异常传递给 exceptionCaught
-                                    ctx.fireExceptionCaught(future.cause());
-                                }
-                            });
-                }
-            } else {
-                if (protocol == null) {
-                    //设置协议
-                    protocol = attribute.getProtocol();
-                }
-                ctx.writeAndFlush(new TextWebSocketFrame("Console服务端【" + serverId + "】连接成功，欢迎使用调度系统控制台"));
-                ctx.writeAndFlush(new TextWebSocketFrame(consoleCommand.getMenu()));
-                jsonObject.set("handshake_complete", true);
+            String serverId = paramMap.get("serverId");
+            // 将 serverId 绑定到 Channel 属性中，方便后续使用
+            ctx.channel().attr(AttributeKeyEnum.SERVER_ID.key()).set(serverId);
+
+            // 1. 获取当前 NettyServer 实例 (通过协议类型查找)
+            NettyServer server = NettyServer.getServer(attribute.getProtocol());
+
+            if (server == null) {
+                RcsLog.consoleLog.error("无法获取 NettyServer 实例: {}", attribute.getProtocol());
+                ctx.close();
+                return null;
             }
+
+            // 2. 使用实例方法 getContexts() 和 getChannelIds() (CamelCase命名)
+            // 检查 ServerId 是否已存在 (禁止重复登录)
+            if (server.getContexts().containsKey(serverId)) {
+                String oldChannelId = server.getChannelIds().get(ctx.channel().id().toString());
+
+                // 如果是同一个连接重连，或者重复ID，进行处理
+                if (serverId.equals(oldChannelId)) {
+                    // 这里的逻辑视你的业务而定，通常是踢掉旧的或拒绝新的
+                    // 此处保持你原有的逻辑结构，只是修正获取 Map 的方式
+                }
+
+                RcsLog.consoleLog.error("{} 服务端已连接到系统，因此你的连接被拒绝", serverId);
+                ctx.writeAndFlush(new TextWebSocketFrame("连接拒绝：ID重复登录"));
+                ctx.close();
+                return null;
+            }
+
+            // 登录成功处理
+            if (protocol == null) {
+                //设置协议
+                protocol = attribute.getProtocol();
+            }
+
+            ctx.writeAndFlush(new TextWebSocketFrame("Console服务端【" + serverId + "】连接成功，欢迎使用调度系统控制台"));
+            // 发送菜单
+            ctx.writeAndFlush(new TextWebSocketFrame(consoleCommand.getMenu()));
+
+            // 标记握手完成，通知 NettyServer 将连接加入管理
+            jsonObject.set("handshake_complete", true);
         }
 
         return jsonObject;

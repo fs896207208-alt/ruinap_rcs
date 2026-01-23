@@ -43,6 +43,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
 
     private final AlarmManager alarmManager;
     private final VthreadPool vthreadPool;
+    @Getter
     private final ServerHandlerRegistry handlerRegistry;
     /**
      * 服务端属性
@@ -54,6 +55,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
     /**
      * 存储服务端对象
      */
+    @Getter
     private static final Map<String, NettyServer> SERVERS = new ConcurrentHashMap<>();
 
     // ================== 实例级状态 (每个端口独享) ==================

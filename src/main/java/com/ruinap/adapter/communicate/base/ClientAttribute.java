@@ -1,8 +1,8 @@
 package com.ruinap.adapter.communicate.base;
 
-import com.ruinap.adapter.communicate.base.handler.IBaseClientHandler;
 import com.ruinap.adapter.communicate.base.protocol.IProtocolOption;
 import com.ruinap.adapter.communicate.client.NettyClient;
+import com.ruinap.adapter.communicate.client.handler.ClientHandler;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.framework.annotation.Component;
@@ -49,7 +49,7 @@ public class ClientAttribute extends BaseAttribute {
     /**
      * 客户端处理器
      */
-    private IBaseClientHandler handler;
+    private ClientHandler handler;
     /**
      * 存储客户端连接上下文
      */
@@ -77,7 +77,7 @@ public class ClientAttribute extends BaseAttribute {
      */
     public ClientAttribute(URI uri, String clientId, LinkEquipmentTypeEnum equipmentType, String maxConnectFailed,
                            IProtocolOption<Bootstrap, NettyClient> protocolOption,
-                           ProtocolEnum protocol, IBaseClientHandler handler) {
+                           ProtocolEnum protocol, ClientHandler handler) {
         // 调用基类构造
         super(protocol, protocolOption);
         this.uri = uri;
