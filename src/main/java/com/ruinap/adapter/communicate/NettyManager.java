@@ -287,8 +287,7 @@ public class NettyManager {
         if (agvLink == null) {
             return;
         }
-
-        List<Supplier<CompletableFuture<Void>>> tasks = new ArrayList<>();
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
         //遍历所有AGV配置
         for (Map.Entry<String, Map<String, String>> entry : agvLink.entrySet()) {
             String clientId = entry.getKey();
@@ -340,14 +339,24 @@ public class NettyManager {
 
                 // 创建任务
                 Supplier<CompletableFuture<Void>> taskSupplier = asyncService.runAsync(() -> {
-                    // 调用内部辅助方法启动
-                    doStartClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get());
+                    try {
+                        doStartClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get()).join();
+                    } catch (Exception e) {
+                        RcsLog.consoleLog.error("设备 [{}] 启动异常", clientId, e);
+                    }
                 });
-                tasks.add(taskSupplier);
+                futures.add(taskSupplier.get());
             }
         }
-        // 严格按顺序执行
-        asyncService.executeStrictlySequential(tasks);
+
+        // 等待所有AGV启动任务完成 (不阻塞主线程，等待所有连接尝试结束)
+        if (!futures.isEmpty()) {
+            try {
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            } catch (Exception e) {
+                RcsLog.consoleLog.error("AGV 批量启动过程中发生异常", e);
+            }
+        }
     }
 
     /**
@@ -359,7 +368,7 @@ public class NettyManager {
             return;
         }
 
-        List<Supplier<CompletableFuture<Void>>> tasks = new ArrayList<>();
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
         for (Map.Entry<String, Map<String, String>> entry : chargeLink.entrySet()) {
             String clientId = entry.getKey();
             Map<String, String> value = entry.getValue();
@@ -403,13 +412,23 @@ public class NettyManager {
                 IProtocolOption protocolOption = clientFactory.getProtocolOption(protocolEnum);
                 if (protocolOption != null) {
                     Supplier<CompletableFuture<Void>> taskSupplier = asyncService.runAsync(() -> {
-                        doStartClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get());
+                        try {
+                            doStartClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get()).join();
+                        } catch (Exception e) {
+                            RcsLog.consoleLog.error("设备 [{}] 启动异常", clientId, e);
+                        }
                     });
-                    tasks.add(taskSupplier);
+                    futures.add(taskSupplier.get());
                 }
             }
         }
-        asyncService.executeStrictlySequential(tasks);
+        if (!futures.isEmpty()) {
+            try {
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            } catch (Exception e) {
+                RcsLog.consoleLog.error("充电桩批量启动过程中发生异常", e);
+            }
+        }
     }
 
     /**
@@ -421,7 +440,7 @@ public class NettyManager {
             return;
         }
 
-        List<Supplier<CompletableFuture<Void>>> tasks = new ArrayList<>();
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
 
         String clientId = transferLink.get("code");
         String pact = transferLink.get("pact");
@@ -459,12 +478,23 @@ public class NettyManager {
             IProtocolOption protocolOption = clientFactory.getProtocolOption(protocolEnum);
             if (protocolOption != null) {
                 Supplier<CompletableFuture<Void>> taskSupplier = asyncService.runAsync(() -> {
-                    doStartClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get());
+                    try {
+                        doStartClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get()).join();
+                    } catch (Exception e) {
+                        RcsLog.consoleLog.error("设备 [{}] 启动异常", clientId, e);
+                    }
                 });
-                tasks.add(taskSupplier);
+                futures.add(taskSupplier.get());
             }
         }
-        asyncService.executeStrictlySequential(tasks);
+
+        if (!futures.isEmpty()) {
+            try {
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            } catch (Exception e) {
+                RcsLog.consoleLog.error("中转设备启动过程中发生异常", e);
+            }
+        }
     }
 
     /**

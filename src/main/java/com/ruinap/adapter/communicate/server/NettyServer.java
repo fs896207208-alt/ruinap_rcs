@@ -24,6 +24,7 @@ import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -72,6 +73,10 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
      * 全局 Map，用于存储服务端 ID 和对应的 CompletableFuture
      */
     private final Map<String, TypedFuture<?>> futures = new ConcurrentHashMap<>();
+    /**
+     * 记录每个连接正在等待的 RequestId 集合
+     */
+    private final Map<String, Set<String>> channelPendingRequests = new ConcurrentHashMap<>();
     /**
      * 存储服务端请求ID
      */
@@ -220,16 +225,24 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         }
 
         String key = StrUtil.format("{}_{}", serverId, requestId);
+        // 获取 Channel 的短 ID (用于倒排索引 Key)
+        String channelId = ctx.channel().id().asShortText();
         try {
             // 存储带类型信息的Future
             putFuture(key, future, responseType);
+            //存入倒排索引 (建立 Channel -> RequestKey 的关联)
+            channelPendingRequests.computeIfAbsent(channelId, k -> ConcurrentHashMap.newKeySet()).add(key);
+
             EventLoop eventLoop = ctx.channel().eventLoop();
 
             // 可配置超时时间，例如从属性获取
             long timeoutSeconds = 3;
             ScheduledFuture<?> timeoutScheduledFuture = eventLoop.schedule(() -> {
                 if (future.completeExceptionally(new TimeoutException("等待服务端响应超时"))) {
+                    // 清理资源
                     this.futures.remove(key);
+                    // 同步移除倒排索引
+                    removePendingKey(channelId, key);
                     RcsLog.communicateOtherLog.error("{} {}请求超时", serverId, requestId);
                 }
             }, timeoutSeconds, TimeUnit.SECONDS);
@@ -237,6 +250,8 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             future.whenComplete((res, ex) -> {
                 timeoutScheduledFuture.cancel(false);
                 this.futures.remove(key);
+                // 同步移除倒排索引
+                removePendingKey(channelId, key);
             });
 
             ctx.writeAndFlush(attribute.getProtocolOption().wrapMessage(message)).addListener(f -> {
@@ -247,11 +262,23 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
 
         } catch (Exception e) {
             this.futures.remove(key);
+            // 同步移除倒排索引
+            removePendingKey(channelId, key);
             String errorMsg = String.format("消息发送异常: %s", e.getMessage());
             RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), serverId, errorMsg);
             future.completeExceptionally(new RuntimeException(errorMsg, e));
         }
         return future;
+    }
+
+    /**
+     * 辅助方法：安全移除倒排索引中的 Key
+     */
+    private void removePendingKey(String channelId, String key) {
+        Set<String> keys = channelPendingRequests.get(channelId);
+        if (keys != null) {
+            keys.remove(key);
+        }
     }
 
     //********************************************************* Netty生命周期开始 *********************************************************
@@ -270,6 +297,9 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         Channel channel = ctx.channel();
         // 从 Channel 的 AttributeKey 中获取服务端路径
         String path = channel.attr(AttributeKeyEnum.PATH.key()).get();
+        if (path == null) {
+            path = "";
+        }
         //获取事件处理器
         IServerHandler serverEventHandler = handlerRegistry.getHandler(attribute.getProtocol(), path);
         if (serverEventHandler == null) {
@@ -352,42 +382,74 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
     public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
         // 从上下文中获取Channel
         Channel channel = ctx.channel();
-        // 从 Channel 的 AttributeKey 中获取服务端路径
-        String path = channel.attr(AttributeKeyEnum.PATH.key()).get();
+        String fullId = channel.id().toString();
+        String shortId = channel.id().asShortText();
 
-        // 从 Channel 的 AttributeKey 中获取服务端ID
-        String serverId = channel.attr(AttributeKeyEnum.SERVER_ID.key()).get();
-        // 从 Channel 中获取服务端ID
-        String id = channel.id().toString();
-        if (this.channelIds.containsKey(id)) {
-            this.channelIds.remove(id);
+        // 从 Channel 的 AttributeKey 中获取属性
+        String path = "";
+        if (channel.hasAttr(AttributeKeyEnum.PATH.key())) {
+            path = channel.attr(AttributeKeyEnum.PATH.key()).get();
+        }
+        String serverId = "UNKNOWN";
+        if (channel.hasAttr(AttributeKeyEnum.SERVER_ID.key())) {
+            serverId = channel.attr(AttributeKeyEnum.SERVER_ID.key()).get();
+        }
+
+        // ====================================================================
+        // O(1) 快速清理该连接挂起的同步请求
+        // ====================================================================
+        Set<String> pendingKeys = channelPendingRequests.remove(shortId);
+        if (pendingKeys != null && !pendingKeys.isEmpty()) {
+            Exception disconnectEx = new IllegalStateException("连接已断开，请求强制终止: " + serverId);
+            int count = 0;
+            for (String key : pendingKeys) {
+                // 直接通过 Key 移除 Future，无需遍历整个 Map
+                TypedFuture<?> typedFuture = this.futures.remove(key);
+                if (typedFuture != null && typedFuture.getFuture() != null && !typedFuture.getFuture().isDone()) {
+                    typedFuture.getFuture().completeExceptionally(disconnectEx);
+                    count++;
+                }
+            }
+            if (count > 0) {
+                RcsLog.consoleLog.warn("[{}] 断线清理: 已强制终止 {} 个挂起的同步请求", serverId, count);
+            }
+        }
+
+        // ====================================================================
+        // 资源清理逻辑
+        // ====================================================================
+        // 检查是否是已登录的连接
+        if (this.channelIds.containsKey(fullId)) {
+            this.channelIds.remove(fullId);
             this.contexts.remove(serverId);
-            this.paths.remove(serverId);
-            this.requestIds.remove(serverId);
+            if (serverId != null) {
+                this.paths.remove(serverId);
+                this.requestIds.remove(serverId);
+            }
+
             RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接并清理资源", serverId));
 
             //发布下线事件
             publishEvent(channel, serverId, NettyConnectionEvent.State.DISCONNECTED);
         } else {
-            RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接", serverId));
+            RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接(未完全注册状态)", serverId));
         }
 
-        if (!path.contains(ServerRouteEnum.VISUAL.getRoute())) {
+        if (path != null && !path.contains(ServerRouteEnum.VISUAL.getRoute())) {
             //触发告警
             alarmManager.triggerAlarm(serverId, AlarmCodeEnum.E12004, "rcs");
         }
 
-        //获取事件处理器
-        IServerHandler serverEventHandler = handlerRegistry.getHandler(attribute.getProtocol(), path);
-        if (serverEventHandler == null) {
-            ctx.close();
-            RcsLog.consoleLog.error("Netty 服务器未找到匹配路径的处理器: " + this.attribute.getProtocol().getProtocol() + path);
-            return;
+        //获取事件处理器并联动
+        if (path != null) {
+            IServerHandler serverEventHandler = handlerRegistry.getHandler(attribute.getProtocol(), path);
+            if (serverEventHandler != null) {
+                // 调用事件处理器的 handlerRemoved 方法
+                serverEventHandler.handlerRemoved(ctx, attribute);
+            }
         }
-        // 调用事件处理器的 handlerRemoved 方法
-        serverEventHandler.handlerRemoved(ctx, attribute);
 
-        //Netty是链式处理的，将事件传递到下一个 ChannelHandler，如果不调用则事件会终止在当前ChannelHandler
+        //Netty是链式处理的，将事件传递到下一个 ChannelHandler
         super.handlerRemoved(ctx);
     }
 
