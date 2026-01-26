@@ -2,6 +2,7 @@ package com.ruinap.adapter.communicate.client.protocol;
 
 import com.ruinap.adapter.communicate.base.protocol.IProtocolOption;
 import com.ruinap.adapter.communicate.client.NettyClient;
+import com.ruinap.adapter.communicate.server.handler.IdleEventHandler;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.bootstrap.Bootstrap;
@@ -12,6 +13,7 @@ import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.websocketx.*;
+import io.netty.handler.timeout.IdleStateHandler;
 
 /**
  * WebSocket 客户端协议参数实现
@@ -72,6 +74,12 @@ public class WebSocketOption implements IProtocolOption<Bootstrap, NettyClient> 
                 // 最大帧大小
                 .maxFramePayloadLength(65536)
                 .build();
+
+        // 空闲检测 (例如 30秒)
+        pipeline.addLast(new IdleStateHandler(30, 0, 0, java.util.concurrent.TimeUnit.SECONDS));
+        // 心跳处理器
+        pipeline.addLast(new IdleEventHandler());
+
         // WebSocket 客户端协议处理器
         pipeline.addLast(new WebSocketClientProtocolHandler(config));
         // 指定Netty客户端为消息处理器

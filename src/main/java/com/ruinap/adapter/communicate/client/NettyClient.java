@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import com.ruinap.adapter.communicate.base.ClientAttribute;
 import com.ruinap.adapter.communicate.base.IBaseClient;
+import com.ruinap.adapter.communicate.base.TypedFuture;
 import com.ruinap.core.business.AlarmManager;
 import com.ruinap.infra.async.OrderedTaskDispatcher;
 import com.ruinap.infra.config.CoreYaml;
@@ -22,6 +23,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -348,6 +350,7 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
         Channel channel = ctx.channel();
         String clientId = channel.attr(AttributeKeyEnum.CLIENT_ID.key()).get();
         String equipmentType = attribute.getEquipmentType().getEquipmentType();
+        String logPrefix = equipmentType + clientId;
         // 连接关闭时触发
         RcsLog.consoleLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), clientId, "与 " + attribute.getProtocol() + " 服务器断开连接: " + ctx.channel().remoteAddress());
         //记录日志
@@ -359,6 +362,25 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
         if (clientId != null && !clientId.isEmpty()) {
             // 删除客户端上下文
             attribute.setContext(null);
+            Map<String, TypedFuture<?>> futures = attribute.getFutures();
+            if (futures != null && !futures.isEmpty()) {
+                // 构造一个通用的异常对象
+                Exception disconnectEx = new IllegalStateException("连接已断开，请求强制终止: " + ctx.channel().remoteAddress());
+
+                int count = 0;
+                // 直接遍历 Values，避免使用 key 查找，效率更高
+                for (TypedFuture<?> typedFuture : futures.values()) {
+                    if (typedFuture != null && typedFuture.getFuture() != null && !typedFuture.getFuture().isDone()) {
+                        // 强制完成异常
+                        typedFuture.getFuture().completeExceptionally(disconnectEx);
+                        count++;
+                    }
+                }
+                // 清空 Map
+                futures.clear();
+
+                RcsLog.consoleLog.warn("[{}] 断线清理: 已终止 {} 个挂起的同步请求", logPrefix, count);
+            }
             // 【关键策略】断开即下线
             publishEvent(ctx.channel(), NettyConnectionEvent.State.DISCONNECTED);
             attribute.setRequestId(new AtomicLong(0L));

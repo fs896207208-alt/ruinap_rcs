@@ -55,6 +55,11 @@ public class TcpOption implements IProtocolOption<Bootstrap, NettyClient> {
         pipeline.addLast(new ByteArrayEncoder());
         pipeline.addLast(new ByteArrayDecoder());
 
+        // 空闲检测 (30秒没读到数据，触发 ReaderIdle)
+        pipeline.addLast(new io.netty.handler.timeout.IdleStateHandler(30, 0, 0, java.util.concurrent.TimeUnit.SECONDS));
+        // 心跳处理器 (必须加在编解码器之后，ClientHandler之前)
+        pipeline.addLast(new com.ruinap.adapter.communicate.server.handler.IdleEventHandler());
+
         // 指定Netty客户端为消息处理器
         pipeline.addLast(client);
     }
