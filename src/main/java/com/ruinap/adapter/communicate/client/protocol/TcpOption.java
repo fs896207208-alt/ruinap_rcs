@@ -62,6 +62,8 @@ public class TcpOption implements IProtocolOption<Bootstrap, NettyClient> {
 
         // 指定Netty客户端为消息处理器
         pipeline.addLast(client);
+        // 指定Netty客户端业务线程组
+        pipeline.addLast(client.getBusinessGroup(), client);
     }
 
 

@@ -84,6 +84,8 @@ public class WebSocketOption implements IProtocolOption<Bootstrap, NettyClient> 
         pipeline.addLast(new WebSocketClientProtocolHandler(config));
         // 指定Netty客户端为消息处理器
         pipeline.addLast(client);
+        // 指定Netty客户端业务线程组
+        pipeline.addLast(client.getBusinessGroup(), client);
     }
 
 

@@ -6,7 +6,6 @@ import com.ruinap.adapter.communicate.base.ClientAttribute;
 import com.ruinap.adapter.communicate.base.IBaseClient;
 import com.ruinap.adapter.communicate.base.TypedFuture;
 import com.ruinap.core.business.AlarmManager;
-import com.ruinap.infra.async.OrderedTaskDispatcher;
 import com.ruinap.infra.config.CoreYaml;
 import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
@@ -17,11 +16,12 @@ import com.ruinap.infra.framework.util.SpringContextHolder;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.util.ReferenceCountUtil;
-import io.netty.util.ReferenceCounted;
+import io.netty.util.CharsetUtil;
+import io.netty.util.concurrent.EventExecutorGroup;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 
@@ -39,7 +39,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * @create 2025-05-09 15:23
  */
 public class NettyClient extends SimpleChannelInboundHandler<Object> implements IBaseClient {
-    private final OrderedTaskDispatcher taskDispatcher;
+    @Getter
+    private final EventExecutorGroup businessGroup;
     private final CoreYaml coreYaml;
     private final AlarmManager alarmManager;
     private final VthreadPool vthreadPool;
@@ -58,11 +59,11 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
      * 构造函数
      *
      */
-    public NettyClient(ClientAttribute attribute, OrderedTaskDispatcher taskDispatcher, CoreYaml coreYaml, AlarmManager alarmManager, VthreadPool vthreadPool) {
+    public NettyClient(ClientAttribute attribute, EventExecutorGroup businessGroup, CoreYaml coreYaml, AlarmManager alarmManager, VthreadPool vthreadPool) {
         this.attribute = attribute;
         this.coreYaml = coreYaml;
         this.alarmManager = alarmManager;
-        this.taskDispatcher = taskDispatcher;
+        this.businessGroup = businessGroup;
         this.vthreadPool = vthreadPool;
     }
 
@@ -328,30 +329,26 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
      */
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object frame) throws Exception {
-        // 引用计数保留
-        // 因为处理逻辑切换到了另一个线程，Netty 的 SimpleChannelInboundHandler 会在当前方法返回后
-        // 自动 release 释放对象。必须手动 retain，确保在异步线程中使用时对象依然有效。
-        if (frame instanceof ReferenceCounted) {
-            ((ReferenceCounted) frame).retain();
-        }
+        try {
+            // 建议：在这里进行 ByteBuf -> String 的转换，确保传给 Handler 的是 POJO
+            Object safePayload = convertFrame(frame);
 
-        taskDispatcher.dispatch(attribute.getClientId(), () -> {
-            try {
-                // 在虚拟线程中执行耗时的业务 Handler
-                attribute.getHandler().channelRead0(ctx, frame, attribute);
-            } catch (Throwable e) {
-                // 捕获 Throwable，防止 Error 导致线程静默死亡
-                RcsLog.communicateLog.error("客户端业务处理异常", e);
-                // 将异常传递给业务层处理
-                attribute.getHandler().exceptionCaught(ctx, e, attribute);
-            } finally {
-                //  业务处理完毕（或发生异常）后，手动释放引用
-                // 对应上面的 retain，必须成对出现，否则会导致内存泄漏
-                if (frame instanceof ReferenceCounted) {
-                    ReferenceCountUtil.safeRelease(frame);
-                }
-            }
-        });
+            // 直接调用业务逻辑，天然串行，无需 dispatch
+            attribute.getHandler().channelRead0(ctx, safePayload, attribute);
+
+        } catch (Throwable e) {
+            RcsLog.communicateLog.error("客户端业务处理异常", e);
+            attribute.getHandler().exceptionCaught(ctx, e, attribute);
+        }
+    }
+
+    // 辅助转换方法 (推荐加上)
+    private Object convertFrame(Object frame) {
+        if (frame instanceof ByteBuf) {
+            return ((ByteBuf) frame).toString(CharsetUtil.UTF_8);
+        }
+        // 如果是 WebSocketFrame，根据具体类型提取
+        return frame;
     }
 
     /**
@@ -408,7 +405,6 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
             }
 
             RcsLog.consoleLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), equipmentType + clientId, "服务器断开连接，上下文已删除");
-            taskDispatcher.unregister(clientId);
             //触发告警
             alarmManager.triggerAlarm(equipmentType + clientId, AlarmCodeEnum.E12003, "rcs");
         }
