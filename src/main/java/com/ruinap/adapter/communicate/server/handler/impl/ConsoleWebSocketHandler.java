@@ -90,9 +90,8 @@ public class ConsoleWebSocketHandler implements IServerHandler {
             // 将 serverId 绑定到 Channel 属性中，方便后续使用
             ctx.channel().attr(AttributeKeyEnum.SERVER_ID.key()).set(serverId);
 
-            // 1. 获取当前 NettyServer 实例 (通过协议类型查找)
-            NettyServer server = NettyServer.getServer(attribute.getProtocol());
-
+            // 1. 直接从 Channel 属性获取当前所属的 NettyServer 实例
+            NettyServer server = ctx.channel().attr(NettyServer.SERVER_REF_KEY).get();
             if (server == null) {
                 RcsLog.consoleLog.error("无法获取 NettyServer 实例: {}", attribute.getProtocol());
                 ctx.close();

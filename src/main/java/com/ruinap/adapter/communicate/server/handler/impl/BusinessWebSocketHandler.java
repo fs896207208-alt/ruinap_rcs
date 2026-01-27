@@ -95,8 +95,8 @@ public class BusinessWebSocketHandler implements IServerHandler {
             String id = ctx.channel().id().toString();
             JSONObject entries = new JSONObject();
 
-            // 1. 获取当前 NettyServer 实例
-            NettyServer server = NettyServer.getServer(attribute.getProtocol());
+            // 1. 直接从 Channel 属性获取当前所属的 NettyServer 实例
+            NettyServer server = ctx.channel().attr(NettyServer.SERVER_REF_KEY).get();
             if (server == null) {
                 RcsLog.consoleLog.error("无法获取 NettyServer 实例: {}", attribute.getProtocol());
                 ctx.close();

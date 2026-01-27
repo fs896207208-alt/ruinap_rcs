@@ -20,6 +20,8 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.ReferenceCounted;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 
@@ -326,14 +328,28 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
      */
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object frame) throws Exception {
+        // 引用计数保留
+        // 因为处理逻辑切换到了另一个线程，Netty 的 SimpleChannelInboundHandler 会在当前方法返回后
+        // 自动 release 释放对象。必须手动 retain，确保在异步线程中使用时对象依然有效。
+        if (frame instanceof ReferenceCounted) {
+            ((ReferenceCounted) frame).retain();
+        }
+
         taskDispatcher.dispatch(attribute.getClientId(), () -> {
             try {
                 // 在虚拟线程中执行耗时的业务 Handler
                 attribute.getHandler().channelRead0(ctx, frame, attribute);
-            } catch (Exception e) {
-                // 捕获业务异常，防止线程静默退出
+            } catch (Throwable e) {
+                // 捕获 Throwable，防止 Error 导致线程静默死亡
                 RcsLog.communicateLog.error("客户端业务处理异常", e);
+                // 将异常传递给业务层处理
                 attribute.getHandler().exceptionCaught(ctx, e, attribute);
+            } finally {
+                //  业务处理完毕（或发生异常）后，手动释放引用
+                // 对应上面的 retain，必须成对出现，否则会导致内存泄漏
+                if (frame instanceof ReferenceCounted) {
+                    ReferenceCountUtil.safeRelease(frame);
+                }
             }
         });
     }

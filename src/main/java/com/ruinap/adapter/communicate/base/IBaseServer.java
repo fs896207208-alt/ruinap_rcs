@@ -36,5 +36,5 @@ public interface IBaseServer {
      * @param responseType 响应类型
      * @return 一个 CompletableFuture，将在收到响应或超时时完成
      */
-    <T> CompletableFuture<T> sendMessage(String serverId, Long requestId, T message, Class<T> responseType);
+    <T> CompletableFuture<T> sendMessage(String serverId, Long requestId, Object message, Class<T> responseType);
 }

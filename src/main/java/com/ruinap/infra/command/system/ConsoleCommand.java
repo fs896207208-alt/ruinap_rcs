@@ -7,8 +7,7 @@ import cn.hutool.db.sql.Condition;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import cn.hutool.system.oshi.OshiUtil;
-import com.ruinap.adapter.communicate.client.NettyClient;
-import com.ruinap.adapter.communicate.server.NettyServer;
+import com.ruinap.adapter.communicate.NettyManager;
 import com.ruinap.core.equipment.manager.AgvManager;
 import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.map.MapManager;
@@ -18,6 +17,7 @@ import com.ruinap.core.task.domain.TaskPath;
 import com.ruinap.infra.command.agv.AgvCommandService;
 import com.ruinap.infra.config.LinkYaml;
 import com.ruinap.infra.enums.agv.AgvStateEnum;
+import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.enums.task.PlanStateEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
@@ -59,6 +59,8 @@ public class ConsoleCommand {
     private AgvCommandService agvCommandService;
     @Autowired
     private TaskPathManager taskPathManager;
+    @Autowired
+    private NettyManager nettyManager;
 
     /**
      * 直发指令常量
@@ -252,31 +254,31 @@ public class ConsoleCommand {
             builder.append("输入的格式不正确，正确指令为(括号里的参数)：\n");
             builder.append("[7] [空格] [AGV编号] [空格] [地图号] [空格] [点位编号] [空格] [朝向角度]\n");
             builder.append("★朝向角度：角度需要*100，如想让AGV角度为-90度，那么填入-9000\n\n");
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, builder.toString());
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, builder.toString());
             return builder.toString();
         }
         boolean isInteger = NumberUtil.isInteger(messages[1]);
         if (!isInteger) {
             String message = "输入的AGV编号[" + messages[1] + "]类型不正确，允许的类型为数字组成";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
         isInteger = NumberUtil.isInteger(messages[2]);
         if (!isInteger) {
             String message = "输入的地图号[" + messages[2] + "]类型不正确，允许的类型为数字组成";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
         isInteger = NumberUtil.isInteger(messages[3]);
         if (!isInteger) {
             String message = "输入的点位编号[" + messages[3] + "]类型不正确，允许的类型为数字组成";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
         isInteger = NumberUtil.isInteger(messages[4]);
         if (!isInteger) {
             String message = "输入的朝向角度[" + messages[4] + "]类型不正确，允许的类型为数字组成";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
 
@@ -284,7 +286,7 @@ public class ConsoleCommand {
         RcsAgv agv = agvManager.getRcsAgvByCode(messages[1]);
         if (agv == null) {
             String message = "AGV[" + messages[1] + "]不存在或离线";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
 
@@ -294,7 +296,7 @@ public class ConsoleCommand {
         boolean sendFlag = sendReLocationCommand(agv, mapId, pointId, angle);
         if (sendFlag) {
             result = "重定位AGV【" + messages[2] + "】数据成功";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, result);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, result);
         }
         return result;
     }
@@ -327,15 +329,15 @@ public class ConsoleCommand {
         //设备种类
         String equipmentType = agvLink.get("equipment_type");
         // 检查WebSocket客户端是否在线
-        boolean socketOnline = NettyClient.isClientOnline(equipmentType, agvId);
+        boolean socketOnline = nettyManager.isClientOnline(equipmentType, agvId);
         if (socketOnline) {
             //获取AGV的标识
-            long mark = NettyClient.getClientCounter(equipmentType, agvId);
+            long mark = nettyManager.getClientCounter(equipmentType, agvId);
             ByteBuf byteBuf = Unpooled.buffer();
             //获取指令
             agvCommandService.getReLocation(pact, byteBuf, agvId, mapId, pointId, angle, mark);
             // 发送数据
-            CompletableFuture<String> future = NettyClient.getClient(equipmentType, agvId).sendMessage(mark, byteBuf, String.class);
+            CompletableFuture<String> future = nettyManager.sendMessage(LinkEquipmentTypeEnum.fromEquipmentType(equipmentType), agvId, mark, byteBuf, String.class);
             try {
                 // 获取返回结果
                 String resultStr = future.get(3, TimeUnit.SECONDS);
@@ -421,33 +423,33 @@ public class ConsoleCommand {
         String result = null;
         if (messages.length != 2) {
             String message = "输入的格式不正确，正确指令为(括号里的参数)：[9] [空格] [AGV编号]";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
         boolean isInteger = NumberUtil.isInteger(messages[1]);
         if (!isInteger) {
             String message = "输入的AGV编号[" + messages[1] + "]类型不正确，允许的类型为数字组成";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
         //获取AGV
         RcsAgv agv = agvManager.getRcsAgvByCode(messages[1]);
         if (agv == null) {
             String message = "AGV[" + messages[1] + "]不存在或离线";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
 
         if (AgvStateEnum.isEnumByCode(AgvStateEnum.ACTION, agv.getAgvState())) {
             String message = "AGV[" + messages[1] + "]当前状态为[" + AgvStateEnum.ACTION.name + "]，禁止取消任务，请等待AGV做完动作再执行指令";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
         //获取任务
         TaskPath taskPath = taskPathManager.get(agv.getAgvId()).getFirst();
         if (taskPath == null) {
             String message = "AGV[" + messages[1] + "]不存在任务";
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, message);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, message);
             return message;
         }
 
@@ -459,16 +461,16 @@ public class ConsoleCommand {
             List<Entity> entityList = taskDB.queryTaskList(agvIdWhere, taskStateWhere, interruptStateWhere);
             if (entityList.isEmpty()) {
                 result = "取消AGV[" + agv.getAgvId() + "]的任务失败，查询不到数据";
-                NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, result);
+                nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, result);
             } else {
                 result = "已向AGV[" + messages[1] + "]下发取消任务指令";
                 // 取消任务
                 taskPath.setState(PlanStateEnum.CANCEL.code);
-                NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, result);
+                nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, result);
             }
         } catch (Exception e) {
             result = "取消任务失败，" + e.getMessage();
-            NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, result);
+            nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, result);
         }
         return result;
     }
@@ -482,7 +484,7 @@ public class ConsoleCommand {
         JSONObject jsonObject = new JSONObject();
         jsonObject.set("Task_Path_Cache", taskPathManager.getAll());
 //        jsonObject.set("Task_Section_Cache", TaskSectionManage.getTASK_SECTION_CACHE());
-        NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, jsonObject.toStringPretty());
+        nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, jsonObject.toStringPretty());
         return jsonObject.toStringPretty();
     }
 
@@ -945,7 +947,7 @@ public class ConsoleCommand {
      *
      * @param id id
      */
-    public static String getServerConfig(String id) {
+    public String getServerConfig(String id) {
         StringBuilder sb = new StringBuilder();
         sb.append("您的服务器配置参数: \n");
         sb.append("\n");
@@ -1057,7 +1059,7 @@ public class ConsoleCommand {
         sb.append("\n");
 
         // 将收集到的信息通过WebSocket发送给客户端
-        NettyServer.getServer(ProtocolEnum.WEBSOCKET_SERVER).sendMessage(id, sb.toString());
+        nettyManager.sendMessage(ProtocolEnum.WEBSOCKET_SERVER, id, sb.toString());
         return sb.toString();
     }
 }

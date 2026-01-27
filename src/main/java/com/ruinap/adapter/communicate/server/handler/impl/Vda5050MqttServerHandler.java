@@ -114,8 +114,8 @@ public class Vda5050MqttServerHandler implements IServerHandler {
             return;
         }
 
-        // 2. 【核心修复】获取当前 Server 实例
-        NettyServer server = NettyServer.getServer(attribute.getProtocol());
+        // 2. 直接从 Channel 属性获取当前所属的 NettyServer 实例
+        NettyServer server = ctx.channel().attr(NettyServer.SERVER_REF_KEY).get();
         if (server == null) {
             RcsLog.consoleLog.error("严重错误: 无法找到协议 [{}] 对应的 NettyServer 实例", attribute.getProtocol());
             ctx.close();
@@ -175,20 +175,13 @@ public class Vda5050MqttServerHandler implements IServerHandler {
             return;
         }
 
-        // 【核心修复】获取当前 Server 实例
-        NettyServer server = NettyServer.getServer(attribute.getProtocol());
+        // 直接从 Channel 属性获取当前所属的 NettyServer 实例
+        NettyServer server = ctx.channel().attr(NettyServer.SERVER_REF_KEY).get();
         if (server == null) {
             return;
         }
 
-        // 3. 深拷贝 Payload
-        // 将 ByteBuf 数据读取到普通的 byte 数组中
-        // 这样就彻底解耦了 Netty 的内存管理，后续可以安全地在任何线程使用
-        byte[] dataCopy = new byte[payload.readableBytes()];
-        payload.getBytes(payload.readerIndex(), dataCopy);
-
         matchedSubscribers.forEach((subscriberChannelId, subscribeQoS) -> {
-            // 不转发给自己
             if (subscriberChannelId.equals(ctx.channel().id().asShortText())) {
                 return;
             }
@@ -197,16 +190,16 @@ public class Vda5050MqttServerHandler implements IServerHandler {
             if (subCtx != null && subCtx.channel().isActive()) {
                 MqttQoS finalQoS = (publishQoS.value() < subscribeQoS.value()) ? publishQoS : subscribeQoS;
 
-                //为每个接收者创建一个新的 Unpooled Buffer
-                // Unpooled.wrappedBuffer 也是零拷贝的一种，它包装了 byte[]
-                ByteBuf outgoingPayload = io.netty.buffer.Unpooled.wrappedBuffer(dataCopy);
+                // 零拷贝转发
+                // retainedDuplicate() 创建一个新的 Buffer 对象指向同一块内存，并增加引用计数 +1
+                // 必须 retain，因为 writeAndFlush 发送完成后会 release 这个 Buffer
+                ByteBuf outgoingPayload = payload.retainedDuplicate();
 
                 MqttFixedHeader fixedHeader = new MqttFixedHeader(
                         MqttMessageType.PUBLISH, false, finalQoS, false, 0
                 );
                 MqttPublishVariableHeader variableHeader = new MqttPublishVariableHeader(topicName, getNewPacketId());
 
-                // 创建新的消息对象
                 MqttPublishMessage publishMessage = new MqttPublishMessage(fixedHeader, variableHeader, outgoingPayload);
 
                 subCtx.writeAndFlush(publishMessage).addListener(future -> {
@@ -330,7 +323,8 @@ public class Vda5050MqttServerHandler implements IServerHandler {
         String channelId = ctx.channel().id().asShortText();
         String clientId = ctx.channel().attr(AttributeKeyEnum.CLIENT_ID.key()).get();
 
-        NettyServer server = NettyServer.getServer(attribute.getProtocol());
+        // 直接从 Channel 属性获取当前所属的 NettyServer 实例
+        NettyServer server = ctx.channel().attr(NettyServer.SERVER_REF_KEY).get();
         if (server != null) {
             server.getContexts().remove(channelId);
         }

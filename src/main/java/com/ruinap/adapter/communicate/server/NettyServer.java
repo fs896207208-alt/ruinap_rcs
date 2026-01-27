@@ -20,6 +20,9 @@ import com.ruinap.infra.thread.VthreadPool;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.util.AttributeKey;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.ReferenceCounted;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 
@@ -82,6 +85,11 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
      */
     @Getter
     private final Map<String, AtomicLong> requestIds = new ConcurrentHashMap<>();
+
+    /**
+     * NettyServer实例
+     */
+    public static final AttributeKey<NettyServer> SERVER_REF_KEY = AttributeKey.valueOf("NETTY_SERVER_REF");
 
     /**
      * 服务端构造函数
@@ -162,6 +170,9 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
                     // 设置协议属性
                     ch.attr(AttributeKeyEnum.PROTOCOL.key()).set(attribute.getProtocol().getProtocol());
 
+                    //将当前 NettyServer 实例绑定到 Channel 属性中
+                    ch.attr(SERVER_REF_KEY).set(NettyServer.this);
+
                     ChannelPipeline pipeline = ch.pipeline();
                     // 调用 Protocol 接口的方法获取 Handler 列表，并添加到 Pipeline 中
                     attribute.getProtocolOption().createHandlers(pipeline, NettyServer.this);
@@ -214,7 +225,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
      * @return 响应结果
      */
     @Override
-    public <T> CompletableFuture<T> sendMessage(String serverId, Long requestId, T message, Class<T> responseType) {
+    public <T> CompletableFuture<T> sendMessage(String serverId, Long requestId, Object message, Class<T> responseType) {
         CompletableFuture<T> future = new CompletableFuture<>();
 
         ChannelHandlerContext ctx = this.contexts.get(serverId);
@@ -264,6 +275,93 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             this.futures.remove(key);
             // 同步移除倒排索引
             removePendingKey(channelId, key);
+            String errorMsg = String.format("消息发送异常: %s", e.getMessage());
+            RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), serverId, errorMsg);
+            future.completeExceptionally(new RuntimeException(errorMsg, e));
+        }
+        return future;
+    }
+
+    /**
+     * 发送消息并等待响应 (直接使用 Channel，绕过 ID 查找，更安全)
+     * * @param channel      连接通道
+     *
+     * @param requestId    请求ID
+     * @param message      消息内容
+     * @param responseType 响应类型
+     * @return Future
+     */
+    public <T> CompletableFuture<T> sendMessage(Channel channel, Long requestId, T message, Class<T> responseType) {
+        CompletableFuture<T> future = new CompletableFuture<>();
+
+        // 1. 基础校验：先判空，再判活
+        if (channel == null || !channel.isActive()) {
+            String errorMsg = "连接失效或通道未激活";
+
+            // 【修复点】只有 channel 不为 null 时才能去取 ID
+            String tempId = "UNKNOWN_CHANNEL";
+            if (channel != null) {
+                tempId = channel.id().asShortText();
+                // 尝试获取业务 ID
+                if (channel.hasAttr(AttributeKeyEnum.CLIENT_ID.key())) {
+                    String attrId = channel.attr(AttributeKeyEnum.CLIENT_ID.key()).get();
+                    if (attrId != null) {
+                        tempId = attrId;
+                    }
+                }
+            }
+
+            RcsLog.communicateOtherLog.error("{} {}", tempId, errorMsg);
+            future.completeExceptionally(new IllegalStateException(errorMsg));
+            return future;
+        }
+
+        // 2. 生成 Key 和 ChannelId
+        // 注意：这里使用 Channel 的短 ID 作为倒排索引的 Key，这与 handlerRemoved 中的清理逻辑必须保持一致
+        String channelId = channel.id().asShortText();
+        // 这里的 serverId 仅用于日志，尽量获取真实的业务 ID
+        String serverId = channel.hasAttr(AttributeKeyEnum.CLIENT_ID.key()) ?
+                channel.attr(AttributeKeyEnum.CLIENT_ID.key()).get() : channelId;
+
+        String requestKey = StrUtil.format("{}_{}", serverId, requestId);
+
+        try {
+            // 3. 注册 Future
+            putFuture(requestKey, future, responseType);
+            // 4. 注册倒排索引 (用于断线快速清理)
+            channelPendingRequests.computeIfAbsent(channelId, k -> ConcurrentHashMap.newKeySet()).add(requestKey);
+
+            EventLoop eventLoop = channel.eventLoop();
+
+            // 5. 超时控制
+            long timeoutSeconds = 3L;
+            ScheduledFuture<?> timeoutScheduledFuture = eventLoop.schedule(() -> {
+                if (future.completeExceptionally(new TimeoutException("等待服务端响应超时"))) {
+                    this.futures.remove(requestKey);
+                    removePendingKey(channelId, requestKey);
+                    RcsLog.communicateOtherLog.error("{} {}请求超时", serverId, requestId);
+                }
+            }, timeoutSeconds, TimeUnit.SECONDS);
+
+            // 6. 清理回调
+            future.whenComplete((res, ex) -> {
+                timeoutScheduledFuture.cancel(false);
+                this.futures.remove(requestKey);
+                removePendingKey(channelId, requestKey);
+            });
+
+            // 7. 执行发送
+            // 注意：Server 端通常由 Handler 处理编码，或者 pipeline 里有编码器。
+            // 这里直接 writeAndFlush 包装后的消息
+            channel.writeAndFlush(attribute.getProtocolOption().wrapMessage(message)).addListener(f -> {
+                if (!f.isSuccess() && !future.isDone()) {
+                    future.completeExceptionally(f.cause());
+                }
+            });
+
+        } catch (Exception e) {
+            this.futures.remove(requestKey);
+            removePendingKey(channelId, requestKey);
             String errorMsg = String.format("消息发送异常: %s", e.getMessage());
             RcsLog.communicateOtherLog.error(RcsLog.getTemplate(3), RcsLog.randomInt(), serverId, errorMsg);
             future.completeExceptionally(new RuntimeException(errorMsg, e));
@@ -359,13 +457,26 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             return;
         }
 
+        //  引用计数保留
+        // 因为处理逻辑切换到了另一个线程，必须手动增加引用计数，防止 Netty 在本方法返回后自动释放
+        if (frame instanceof ReferenceCounted) {
+            ((ReferenceCounted) frame).retain();
+        }
+
         // 将业务逻辑提交给虚拟线程池，释放 IO 线程
         //  调用事件处理器的 channelRead0 方法
         vthreadPool.execute(() -> {
             try {
                 serverEventHandler.channelRead0(ctx, frame, attribute);
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                // 捕获 Throwable，防止 Error 导致线程静默死亡
+                RcsLog.communicateLog.error("服务端业务处理严重异常", e);
                 exceptionCaught(ctx, e);
+            } finally {
+                // 【关键修复 3】: 业务处理完毕（或发生异常）后，手动释放引用
+                if (frame instanceof ReferenceCounted) {
+                    ReferenceCountUtil.safeRelease(frame);
+                }
             }
         });
     }

@@ -210,14 +210,33 @@ public class NettyManager {
 
     /**
      * 根据协议获取服务端实例
-     * <p>
-     * 替代原: NettyServer.getServer(ProtocolEnum)
      */
     public NettyServer getServer(ProtocolEnum protocolEnum) {
         for (NettyServer server : runningServers.values()) {
             if (server.getAttribute().getProtocol() == protocolEnum) {
                 return server;
             }
+        }
+        return null;
+    }
+
+    /**
+     * 根据协议和端口获取服务端实例
+     *
+     * @param protocolEnum 协议类型
+     * @param port         端口
+     * @return 服务端实例
+     */
+    public NettyServer getServer(ProtocolEnum protocolEnum, Integer port) {
+        if (port == null) {
+            return null;
+        }
+
+        // 1. 直接通过 Key (Port) 获取，性能最高 (O(1))
+        NettyServer server = runningServers.get(port);
+        // 2. 如果找到了，再校验一下协议是否匹配 (防止端口对应了其他协议的服务)
+        if (server != null && server.getAttribute().getProtocol() == protocolEnum) {
+            return server;
         }
         return null;
     }
@@ -231,8 +250,6 @@ public class NettyManager {
 
     /**
      * 发送消息给所有指定路由的服务端连接 (广播)
-     * <p>
-     * 替代原: NettyServer.sendMessageAll(...)
      *
      * @param protocolEnum 协议类型
      * @param routeEnum    路由匹配规则
@@ -600,32 +617,95 @@ public class NettyManager {
     }
 
     /**
-     * 【核心修复】统一发送消息 (Fire and Forget)
-     * <p>
-     * 修复前：只查 activeClients，导致服务端接入的设备无法发送消息。
-     * 修复后：查 globalChannelMap，覆盖所有连接。
+     * 统一发送消息 (Fire and Forget)
      */
     public void sendMessage(LinkEquipmentTypeEnum type, String id, Object msg) {
         String key = generateKey(type, id);
+
+        // 1. 优先尝试 Client 模式 (主动连接)
+        NettyClient client = activeClients.get(key);
+        if (client != null) {
+            client.sendMessage(msg);
+            return;
+        }
+
+        // 2. 尝试 Server 模式 (被动连接)
         Channel channel = globalChannelMap.get(key);
-
         if (channel != null && channel.isActive()) {
-            // 直接写入 Channel
-            // 注意：消息对象 msg 需要是编码器能处理的类型，或者由 ProtocolOption 包装过的
-            // 如果是 Server 端，通常 Pipeline 里已经有 Encoder 了，直接 writeAndFlush POJO 即可
-            // 如果是 Client 端，NettyClient.sendMessage 内部做了 wrap。
-            // 为了统一，这里建议调用者传入原始对象，由 Pipeline 里的 Encoder 处理。
+            // 查找归属的 Server 实例
+            NettyServer server = null;
 
-            // 如果是 activeClients 里的，为了保险起见，还是走 Client 的封装方法
-            NettyClient client = activeClients.get(key);
-            if (client != null) {
-                client.sendMessage(msg);
+            // 方式 A: 属性查找 (O(1))
+            if (channel.hasAttr(NettyServer.SERVER_REF_KEY)) {
+                server = channel.attr(NettyServer.SERVER_REF_KEY).get();
+            }
+
+            // 方式 B: 遍历查找 (兜底)
+            if (server == null) {
+                String fullChannelId = channel.id().toString();
+                for (NettyServer s : runningServers.values()) {
+                    if (s.getChannelIds().containsKey(fullChannelId)) {
+                        server = s;
+                        break;
+                    }
+                }
+            }
+
+            if (server != null) {
+                // 调用新加的 void 重载方法，确保经过 wrapMessage 处理
+                server.sendMessage(id, msg);
             } else {
-                // 如果是 Server 端的连接，直接发
+                // 实在找不到 Server，只能死马当活马医，直接发（可能会因为未包装而出错，但总比不发好）
+                // 建议打个 Warn 日志
+                RcsLog.communicateLog.warn("未找到归属Server，尝试直接发送原生消息: {}", key);
                 channel.writeAndFlush(msg);
             }
         } else {
             RcsLog.communicateLog.warn("发送失败，设备离线或未注册: {}", key);
+        }
+    }
+
+    /**
+     * 指定协议发送消息 (Fire and Forget)
+     * <p>
+     * 场景：明确知道设备是通过某种协议（如 MQTT）接入的，直接指定协议和ID进行发送。
+     * 这种方式不依赖 globalChannelMap 的 Type::ID 索引，而是直接去 Server 内部查找。
+     *
+     * @param protocol 协议类型 (如 MQTT, WEBSOCKET_SERVER)
+     * @param id       设备ID (对于 MQTT 是 ClientId，对于 WebSocket 是连接ID或业务ID)
+     * @param msg      消息内容
+     */
+    public void sendMessage(ProtocolEnum protocol, String id, Object msg) {
+        if (protocol == null || id == null) {
+            RcsLog.communicateLog.warn("发送失败: 协议或ID为空");
+            return;
+        }
+
+        boolean sent = false;
+
+        // 1. 遍历所有运行中的 Server
+        for (NettyServer server : runningServers.values()) {
+            // 2. 筛选出协议匹配的 Server
+            if (server.getAttribute().getProtocol() == protocol) {
+
+                // 3. 尝试从 Server 内部的 Context Map 中查找连接
+                // 注意：这里依赖 Server 内部的 Key 生成策略 (通常是 ClientID)
+                ChannelHandlerContext ctx = server.getContexts().get(id);
+
+                if (ctx != null && ctx.channel().isActive()) {
+                    // 4. 找到了活跃连接，直接发送
+                    server.sendMessage(id, msg);
+                    sent = true;
+
+                    // 找到一个就停止 (通常 ID 在同协议下是唯一的)
+                    break;
+                }
+            }
+        }
+
+        if (!sent) {
+            // 只有当所有该协议的 Server 都找不到这个 ID 时才报警告
+            RcsLog.communicateLog.warn("发送失败: 在协议 [{}] 的服务端未找到活跃设备 [{}]", protocol, id);
         }
     }
 
@@ -637,23 +717,99 @@ public class NettyManager {
      */
     public <T> CompletableFuture<T> sendMessage(LinkEquipmentTypeEnum type, String id, Long requestId, Object msg, Class<T> responseType) {
         String key = generateKey(type, id);
-        NettyClient client = activeClients.get(key);
 
+        // 1. 优先尝试 Client 模式 (主动连接)
+        NettyClient client = activeClients.get(key);
         if (client != null) {
-            // 委托给具体的 Client 实例去发送
             return client.sendMessage(requestId, msg, responseType);
-        } else {
-            // 检查是否在 globalChannelMap 中 (即是否是 Server 端连接)
-            if (globalChannelMap.containsKey(key)) {
-                CompletableFuture<T> future = new CompletableFuture<>();
-                future.completeExceptionally(new UnsupportedOperationException("当前架构暂不支持向 Server 端接入的设备发送同步等待消息，请使用异步发送。Device: " + key));
-                return future;
+        }
+
+        // 2. 尝试 Server 模式 (被动连接)
+        // 只要在 globalChannelMap 里，说明连接是存在的
+        Channel channel = globalChannelMap.get(key);
+        if (channel != null && channel.isActive()) {
+
+            // 【核心逻辑】找到该 Channel 归属的 NettyServer
+            NettyServer server = null;
+
+            // 方式 A: 优先尝试从 Channel 属性中获取 (依赖上一轮的 Dependency Injection 优化)
+            if (channel.hasAttr(NettyServer.SERVER_REF_KEY)) {
+                server = channel.attr(NettyServer.SERVER_REF_KEY).get();
             }
 
+            // 方式 B: 兜底查找 (如果方式 A 未生效，或者连接是很早建立的)
+            // 遍历所有运行中的 Server，检查谁管理这个 Channel ID
+            if (server == null) {
+                String fullChannelId = channel.id().toString();
+                for (NettyServer s : runningServers.values()) {
+                    // NettyServer 维护了 channelIds (FullID -> ShortID) 映射
+                    if (s.getChannelIds().containsKey(fullChannelId)) {
+                        server = s;
+                        break;
+                    }
+                }
+            }
+
+            if (server != null) {
+                // 调用我们在 NettyServer 中新增的重载方法
+                return server.sendMessage(id, requestId, msg, responseType);
+            } else {
+                RcsLog.consoleLog.error("严重数据不一致: Channel 存在但找不到归属的 Server 实例. Key: {}", key);
+            }
+        }
+
+        // 3. 失败处理
+        CompletableFuture<T> future = new CompletableFuture<>();
+        future.completeExceptionally(new RuntimeException("设备未连接或已离线: " + key));
+        return future;
+    }
+
+    /**
+     * 指定协议发送消息 (同步等待响应)
+     * <p>
+     * 场景：明确知道设备是通过某种协议（如 MQTT）接入的，直接指定协议和ID进行发送。
+     * 相比自动路由，这种方式更精准，能避免 ID 冲突问题。
+     *
+     * @param protocol     协议类型 (如 MQTT, WEBSOCKET_SERVER)
+     * @param id           设备ID (Client ID)
+     * @param requestId    请求ID (用于全链路追踪)
+     * @param msg          消息内容 (Object 类型)
+     * @param responseType 响应类型 Class
+     * @param <T>          响应泛型
+     * @return CompletableFuture 异步结果
+     */
+    public <T> CompletableFuture<T> sendMessage(ProtocolEnum protocol, String id, Long requestId, Object msg, Class<T> responseType) {
+        // 1. 基础校验
+        if (protocol == null || id == null) {
             CompletableFuture<T> future = new CompletableFuture<>();
-            future.completeExceptionally(new RuntimeException("设备未连接: " + key));
+            future.completeExceptionally(new IllegalArgumentException("发送失败: 协议或ID为空"));
             return future;
         }
+
+        // 2. 遍历所有运行中的 Server
+        for (NettyServer server : runningServers.values()) {
+            // 3. 筛选出协议匹配的 Server
+            if (server.getAttribute().getProtocol() == protocol) {
+
+                // 4. 尝试从 Server 内部的 Context Map 中查找连接
+                // 直接利用 Server 维护的 ClientID -> ChannelHandlerContext 映射
+                ChannelHandlerContext ctx = server.getContexts().get(id);
+
+                if (ctx != null && ctx.channel().isActive()) {
+                    // 5. 找到了活跃连接，调用 NettyServer 的同步发送方法
+                    return server.sendMessage(id, requestId, msg, responseType);
+                }
+            }
+        }
+
+        // 6. 兜底处理：未找到匹配的 Server 或 Connection
+        RcsLog.communicateLog.warn("发送失败: 在协议 [{}] 的服务端未找到活跃设备 [{}]", protocol, id);
+
+        CompletableFuture<T> future = new CompletableFuture<>();
+        future.completeExceptionally(new RuntimeException(
+                String.format("设备未连接或已离线. Protocol: %s, ID: %s", protocol, id)
+        ));
+        return future;
     }
 
     @PreDestroy
