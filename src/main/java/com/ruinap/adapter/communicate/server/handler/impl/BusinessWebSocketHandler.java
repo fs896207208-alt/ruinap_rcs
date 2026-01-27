@@ -38,6 +38,16 @@ public class BusinessWebSocketHandler implements IServerHandler {
     @Getter
     private static ProtocolEnum protocol;
 
+    @Override
+    public ProtocolEnum getProtocol() {
+        return ProtocolEnum.WEBSOCKET_SERVER;
+    }
+
+    @Override
+    public String getPath() {
+        return "/ws/business";
+    }
+
     /**
      * 触发时机：当从 Channel 读取到数据时调用（核心方法）
      * 用途：处理特定类型的消息（泛型 I 指定消息类型）

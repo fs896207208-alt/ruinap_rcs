@@ -2,6 +2,7 @@ package com.ruinap.adapter.communicate.server.handler;
 
 import com.ruinap.adapter.communicate.base.ServerAttribute;
 import com.ruinap.adapter.communicate.base.handler.IBaseServerHandler;
+import com.ruinap.infra.enums.netty.ProtocolEnum;
 import io.netty.channel.ChannelHandlerContext;
 
 /**
@@ -21,4 +22,16 @@ public interface IServerHandler extends IBaseServerHandler {
      * @param ctx 上下文
      */
     void handlerRemoved(ChannelHandlerContext ctx, ServerAttribute attribute);
+
+    /**
+     * 获取该处理器绑定的协议
+     */
+    ProtocolEnum getProtocol();
+
+    /**
+     * 获取该处理器绑定的路径 (无路径协议可返回空字符串)
+     */
+    default String getPath() {
+        return "";
+    }
 }

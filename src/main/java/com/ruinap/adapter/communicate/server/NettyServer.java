@@ -409,8 +409,8 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         //获取事件处理器
         IServerHandler serverEventHandler = handlerRegistry.getHandler(attribute.getProtocol(), path);
         if (serverEventHandler == null) {
-            ctx.close();
             RcsLog.consoleLog.error("Netty 服务器未找到匹配路径的处理器: " + this.attribute.getProtocol().getProtocol() + path);
+            super.userEventTriggered(ctx, evt);
             return;
         }
         // 调用事件处理器的 userEventTriggered 方法
@@ -428,7 +428,8 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
                 this.channelIds.putIfAbsent(id, serverId);
                 this.requestIds.putIfAbsent(serverId, new AtomicLong(0));
                 //记录日志
-                RcsLog.consoleLog.info("{} 服务端连接成功", serverId);
+                // 【优化点 1】: 增加协议标识
+                RcsLog.consoleLog.info("[{}] {} 服务端连接成功", attribute.getProtocol(), serverId);
 
                 //发布上线事件
                 publishEvent(channel, serverId, NettyConnectionEvent.State.CONNECTED);
@@ -546,12 +547,12 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
                 this.requestIds.remove(serverId);
             }
 
-            RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接并清理资源", serverId));
+            RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("[{}] {} 关闭服务端连接并清理资源", this.attribute.getProtocol(), serverId));
 
             //发布下线事件
             publishEvent(channel, serverId, NettyConnectionEvent.State.DISCONNECTED);
         } else {
-            RcsLog.consoleLog.error(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接(未完全注册状态)", serverId));
+            RcsLog.consoleLog.warn(RcsLog.getTemplate(2), RcsLog.randomInt(), StrUtil.format("{} 关闭服务端连接(未完全注册状态)", serverId));
         }
 
         if (path != null && !path.contains(ServerRouteEnum.VISUAL.getRoute())) {
@@ -589,6 +590,7 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
         String path = channel.attr(AttributeKeyEnum.PATH.key()).get();
         // 从 Channel 的 AttributeKey 中获取服务端ID
         String serverId = channel.attr(AttributeKeyEnum.SERVER_ID.key()).get();
+        cause.printStackTrace();
         //记录日志
         RcsLog.consoleLog.error("{} server_error {}", serverId, cause.getMessage());
 
@@ -611,28 +613,33 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
      * 发布连接事件到 NettyManager
      */
     private void publishEvent(Channel channel, String serverId, NettyConnectionEvent.State state) {
-        // 尝试获取设备类型
-        // 1. 优先从 Channel 属性获取 (start方法里设置的)
+        // 尝试获取设备类型 (能获取到最好，获取不到也没关系)
         LinkEquipmentTypeEnum type = null;
-        String typeStr = channel.attr(AttributeKeyEnum.EQUIPMENT_TYPE.key()).get();
+
+        // 1. 优先从 Channel 属性获取
+        String typeStr = null;
+        if (channel.hasAttr(AttributeKeyEnum.EQUIPMENT_TYPE.key())) {
+            typeStr = channel.attr(AttributeKeyEnum.EQUIPMENT_TYPE.key()).get();
+        }
+
         if (typeStr != null) {
             type = LinkEquipmentTypeEnum.fromEquipmentType(typeStr);
         }
 
-        // 2. 如果 Channel 里没存，尝试从 ServerAttribute 获取 (端口级别的配置)
+        // 2. 尝试从 ServerAttribute 获取 (通常 Server 不配置这个，但保留逻辑无害)
         if (type == null && attribute.getEquipmentType() != null) {
             type = attribute.getEquipmentType();
         }
 
-        // 3. 如果还是没有，根据协议进行兜底推断
+        // 3. VDA5050 协议特殊处理 (保留推断逻辑)
         if (type == null) {
-            // VDA5050 MQTT 协议默认归类为 AGV
             if (attribute.getProtocol() == ProtocolEnum.MQTT_SERVER) {
                 type = LinkEquipmentTypeEnum.AGV;
             }
         }
 
-        if (type != null && serverId != null) {
+        // 【关键修复】: 只要有 serverId 就发布事件，不再强制要求 type != null
+        if (serverId != null) {
             NettyConnectionEvent event = new NettyConnectionEvent(
                     this,
                     NettyConnectionEvent.ConnectSource.SERVER,
@@ -643,7 +650,8 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             );
             SpringContextHolder.publishEvent(event);
         } else {
-            RcsLog.consoleLog.warn("无法发布连接事件，缺少身份信息: ID={}, Type={}", serverId, type);
+            // 只有连 ID 都没有时才视为严重错误
+            RcsLog.consoleLog.warn("无法发布连接事件，缺少身份信息: ID={}", serverId);
         }
     }
 }

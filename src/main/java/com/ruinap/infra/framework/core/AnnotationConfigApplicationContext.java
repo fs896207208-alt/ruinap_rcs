@@ -20,6 +20,8 @@ import org.reflections.Reflections;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -395,15 +397,43 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
                     // 暴力反射：允许访问 private/protected 字段
                     field.setAccessible(true);
                     Class<?> targetType = field.getType();
+                    Object dependency = null;
 
-                    // 跳过Environment
-                    if (targetType == Environment.class) {
-                        field.set(bean, this.environment);
-                        continue;
+                    // =======================================================
+                    // 【新增特性】 支持 List<T> 集合注入
+                    // =======================================================
+                    if (List.class.isAssignableFrom(targetType)) {
+                        Type genericType = field.getGenericType();
+                        if (genericType instanceof ParameterizedType) {
+                            Type[] params = ((ParameterizedType) genericType).getActualTypeArguments();
+                            // 获取泛型类型，例如 List<IServerHandler> 中的 IServerHandler
+                            if (params.length > 0 && params[0] instanceof Class) {
+                                Class<?> elementType = (Class<?>) params[0];
+                                List<Object> beanList = new ArrayList<>();
+                                // 遍历容器中所有 Bean，找到符合泛型类型的实例
+                                for (Object singleton : singletonObjects.values()) {
+                                    if (elementType.isAssignableFrom(singleton.getClass())) {
+                                        beanList.add(singleton);
+                                    }
+                                }
+                                // 如果找到了，就赋值（允许为空列表）
+                                dependency = beanList;
+                            }
+                        }
+                    }
+
+                    // =======================================================
+                    // 标准单例注入逻辑
+                    // =======================================================
+                    // 跳过Environment (已在 Environment 加载时放入 singletonObjects，其实可以直接查)
+                    if (dependency == null && targetType == Environment.class) {
+                        dependency = this.environment;
                     }
 
                     // 1. 先去单例池找（按类名找）
-                    Object dependency = singletonObjects.get(targetType);
+                    if (dependency == null) {
+                        dependency = singletonObjects.get(targetType);
+                    }
                     // 2. 找不到再去接口映射池找（按接口找）
                     if (dependency == null) {
                         dependency = interfaceMap.get(targetType);
@@ -411,6 +441,12 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
 
                     // 检查 required
                     if (dependency == null && field.getAnnotation(Autowired.class).required()) {
+                        // 如果是 List 且没找到任何 Bean，如果是 required=true 且 dependency 为空，说明真的没找到
+                        // 但对于 List 来说，空 List 通常是可以接受的，视业务而定。
+                        // 这里保持严格检查：如果是普通 Bean 没找到则报错；如果是 List 但没找到元素，暂不报错(dependency为ArrayList)，除非泛型解析失败。
+
+                        // 修正逻辑：如果是 List 注入，dependency 此时是一个空 List 或 填充了的 List，不为 null。
+                        // 只有非 List注入且没找到时，dependency 才会为 null。
                         throw new RuntimeException(StrUtil.format("依赖注入失败: 类 [{}] (继承自 {}) 需要依赖 [{}]，但在容器中未找到。",
                                 bean.getClass().getSimpleName(), clazz.getSimpleName(), targetType.getSimpleName()));
                     }

@@ -1,5 +1,6 @@
 package com.ruinap.adapter.communicate.server.handler.impl;
 
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import com.ruinap.adapter.communicate.base.ServerAttribute;
 import com.ruinap.adapter.communicate.server.NettyServer;
@@ -11,14 +12,10 @@ import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.util.ReferenceCountUtil;
 import lombok.Getter;
-
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * ConsoleWebSocketHandler 类，用于处理 WebSocket 控制台相关的消息
@@ -36,6 +33,16 @@ public class ConsoleWebSocketHandler implements IServerHandler {
      */
     @Getter
     private static ProtocolEnum protocol;
+
+    @Override
+    public ProtocolEnum getProtocol() {
+        return ProtocolEnum.WEBSOCKET_SERVER;
+    }
+
+    @Override
+    public String getPath() {
+        return "/ws/console";
+    }
 
     /**
      * 触发时机：当从 Channel 读取到数据时调用（核心方法）
@@ -77,55 +84,42 @@ public class ConsoleWebSocketHandler implements IServerHandler {
     @Override
     public JSONObject userEventTriggered(ChannelHandlerContext ctx, Object evt, ServerAttribute attribute) {
         JSONObject jsonObject = new JSONObject();
-        // 握手成功事件
         if (evt instanceof WebSocketServerProtocolHandler.HandshakeComplete) {
-            WebSocketServerProtocolHandler.HandshakeComplete handshake = (WebSocketServerProtocolHandler.HandshakeComplete) evt;
-            String uri = handshake.requestUri();
-            // 解析参数
-            Map<String, String> paramMap = new HashMap<>();
-            QueryStringDecoder decoder = new QueryStringDecoder(uri);
-            decoder.parameters().forEach((key, value) -> paramMap.put(key, value.get(0)));
 
-            String serverId = paramMap.get("serverId");
-            // 将 serverId 绑定到 Channel 属性中，方便后续使用
-            ctx.channel().attr(AttributeKeyEnum.SERVER_ID.key()).set(serverId);
+            // 1. 获取 ID (由 WebSocketOption 解析并设置)
+            String serverId = ctx.channel().attr(AttributeKeyEnum.SERVER_ID.key()).get();
 
-            // 1. 直接从 Channel 属性获取当前所属的 NettyServer 实例
+            if (StrUtil.isBlank(serverId)) {
+                RcsLog.consoleLog.error("握手成功但无法获取身份ID, 拒绝连接");
+                ctx.writeAndFlush(new TextWebSocketFrame("Error: Identity lost"));
+                ctx.close();
+                return null;
+            }
+
+            // 2. 获取 NettyServer 实例
             NettyServer server = ctx.channel().attr(NettyServer.SERVER_REF_KEY).get();
             if (server == null) {
-                RcsLog.consoleLog.error("无法获取 NettyServer 实例: {}", attribute.getProtocol());
+                RcsLog.consoleLog.error("严重错误: 无法获取 NettyServer 实例");
                 ctx.close();
                 return null;
             }
 
-            // 2. 使用实例方法 getContexts() 和 getChannelIds() (CamelCase命名)
-            // 检查 ServerId 是否已存在 (禁止重复登录)
+            // 3. 重复登录检查
             if (server.getContexts().containsKey(serverId)) {
-                String oldChannelId = server.getChannelIds().get(ctx.channel().id().toString());
-
-                // 如果是同一个连接重连，或者重复ID，进行处理
-                if (serverId.equals(oldChannelId)) {
-                    // 这里的逻辑视你的业务而定，通常是踢掉旧的或拒绝新的
-                    // 此处保持你原有的逻辑结构，只是修正获取 Map 的方式
-                }
-
-                RcsLog.consoleLog.error("{} 服务端已连接到系统，因此你的连接被拒绝", serverId);
-                ctx.writeAndFlush(new TextWebSocketFrame("连接拒绝：ID重复登录"));
+                RcsLog.consoleLog.warn("{} 尝试重复登录，连接被拒绝", serverId);
+                ctx.writeAndFlush(new TextWebSocketFrame("连接拒绝：ID [" + serverId + "] 已在线"));
                 ctx.close();
                 return null;
             }
 
-            // 登录成功处理
+            // 4. 登录成功反馈
             if (protocol == null) {
-                //设置协议
                 protocol = attribute.getProtocol();
             }
 
             ctx.writeAndFlush(new TextWebSocketFrame("Console服务端【" + serverId + "】连接成功，欢迎使用调度系统控制台"));
-            // 发送菜单
             ctx.writeAndFlush(new TextWebSocketFrame(consoleCommand.getMenu()));
 
-            // 标记握手完成，通知 NettyServer 将连接加入管理
             jsonObject.set("handshake_complete", true);
         }
 

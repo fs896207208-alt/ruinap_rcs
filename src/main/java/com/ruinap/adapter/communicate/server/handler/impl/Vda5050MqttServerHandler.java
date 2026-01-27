@@ -7,6 +7,7 @@ import com.ruinap.adapter.communicate.base.ServerAttribute;
 import com.ruinap.adapter.communicate.server.NettyServer;
 import com.ruinap.adapter.communicate.server.handler.IServerHandler;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
+import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -51,6 +52,11 @@ public class Vda5050MqttServerHandler implements IServerHandler {
      * 消息ID生成器，保证ID唯一性
      */
     private static final AtomicInteger PACKET_ID_GENERATOR = new AtomicInteger(1);
+
+    @Override
+    public ProtocolEnum getProtocol() {
+        return ProtocolEnum.MQTT_SERVER;
+    }
 
     @Override
     public JSONObject userEventTriggered(ChannelHandlerContext ctx, Object evt, ServerAttribute attribute) {

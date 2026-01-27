@@ -5,6 +5,7 @@ import com.ruinap.adapter.communicate.base.ServerAttribute;
 import com.ruinap.adapter.communicate.server.NettyServer;
 import com.ruinap.adapter.communicate.server.handler.IServerHandler;
 import com.ruinap.infra.enums.netty.AttributeKeyEnum;
+import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
@@ -82,6 +83,11 @@ public class DefaultWebSocketServerHandler implements IServerHandler {
     @Override
     public void handlerRemoved(ChannelHandlerContext ctx, ServerAttribute attribute) {
         //无业务，暂不处理
+    }
+
+    @Override
+    public ProtocolEnum getProtocol() {
+        return null;
     }
 
     @Override

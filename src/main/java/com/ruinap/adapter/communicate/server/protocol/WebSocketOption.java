@@ -17,6 +17,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
@@ -133,33 +134,66 @@ public class WebSocketOption implements IProtocolOption<ServerBootstrap, NettySe
                     ctx.close();
                     return;
                 }
-                // 从 URI 中提取服务端ID
-                String serverId = uri.substring(uri.lastIndexOf('/') + 1);
-                if (serverId.isEmpty()) {
-                    ctx.close();
-                    return;
-                }
 
-                //截取路径
-                String path = uri.substring(0, uri.lastIndexOf('/'));
-                //获取协议
+                // 1. 使用 Netty 工具解析纯净路径 (去除可能存在的 ?token=xx 等干扰)
+                QueryStringDecoder decoder = new QueryStringDecoder(uri);
+                String fullPath = decoder.path(); // 例如: /xxx/console/1
+
                 ProtocolEnum protocol = server.getAttribute().getProtocol();
-                //使用 server 实例的 Registry 检查路径是否有效
-                if (server.getHandlerRegistry().getHandler(protocol, path) != null) {
-                    // 将服务端ID存储到 Channel 的 AttributeKey 中
-                    ctx.channel().attr(AttributeKeyEnum.SERVER_ID.key()).set(serverId);
-                    ctx.channel().attr(AttributeKeyEnum.PATH.key()).set(path);
-                    ctx.pipeline().addLast(new WebSocketServerProtocolHandler(uri, null, true, 65536));
-                    ctx.pipeline().addLast(server);
-                } else {
+                String serverId = null;
+                String handlerPath = null;
+
+                // 2. 核心路由逻辑：路径回溯匹配 (Path Backtracking)
+                // 尝试策略 A: 直接匹配 (适用于不带 ID 的 Handler，如 /xxx/public)
+                if (server.getHandlerRegistry().getHandler(protocol, fullPath) != null) {
+                    handlerPath = fullPath;
+                    // serverId 保持为 null 或视业务定义
+                }
+                // 尝试策略 B: 父路径匹配 (适用于 /xxx/console/1 这种 /path/{id} 结构)
+                else {
+                    int lastSlashIndex = fullPath.lastIndexOf('/');
+                    // 确保有斜杠且不是根路径
+                    if (lastSlashIndex > 1) {
+                        // 提取路径
+                        String parentPath = fullPath.substring(0, lastSlashIndex);
+                        // 提取客户端 ID
+                        String suffix = fullPath.substring(lastSlashIndex + 1);
+
+                        // 检查父路径是否注册了 Handler
+                        if (server.getHandlerRegistry().getHandler(protocol, parentPath) != null) {
+                            handlerPath = parentPath;
+                            serverId = suffix;
+                        }
+                    }
+                }
+
+                // 3. 校验提取结果
+                if (handlerPath == null) {
+                    RcsLog.consoleLog.error("WebSocket 拒绝连接: 未找到匹配路径的处理器. Protocol={} URI={}", protocol, uri);
                     ctx.close();
-                    RcsLog.consoleLog.error("WebSocket 服务器未找到匹配路径的处理器4: " + protocol.getProtocol() + path);
                     return;
                 }
 
-                //在确认路由和 WebSocket 协议处理器已经添加到管道后，将当前的请求处理器移除。这样当前处理器就不会对后续请求做出处理
+                if (serverId == null || serverId.trim().isEmpty()) {
+                    RcsLog.consoleLog.error("WebSocket 拒绝连接: 路径中未包含 serverId. URI={}", uri);
+                    // 提前关闭，防止进入 NettyServer 后因 key 为 null 导致 Map 报错
+                    ctx.close();
+                    return;
+                }
+
+                // 4. 设置上下文并放行
+                // 将 ID 和 注册路径 存入 Channel 属性
+                ctx.channel().attr(AttributeKeyEnum.SERVER_ID.key()).set(serverId);
+                ctx.channel().attr(AttributeKeyEnum.PATH.key()).set(handlerPath);
+
+                //WebSocketServerProtocolHandler 必须使用完整的请求路径 (fullPath) 进行握手
+                ctx.pipeline().addLast(new WebSocketServerProtocolHandler(fullPath, null, true, 65536));
+
+                // 添加主业务处理器 NettyServer
+                ctx.pipeline().addLast(server);
+
+                // 移除当前预处理器，并将请求向后传递
                 ctx.pipeline().remove(this);
-                //将请求传递给下一个处理器。在这里，retain() 保证请求对象不会被垃圾回收，直到它完成所有的处理
                 ctx.fireChannelRead(req.retain());
             }
         });
