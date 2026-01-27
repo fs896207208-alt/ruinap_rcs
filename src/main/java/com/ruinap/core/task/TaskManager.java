@@ -12,6 +12,7 @@ import com.ruinap.infra.enums.task.PlanStateEnum;
 import com.ruinap.infra.enums.task.TaskStateEnum;
 import com.ruinap.infra.enums.task.TaskTypeEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
+import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.structure.FiFoConcurrentMap;
 import com.ruinap.persistence.repository.ConfigDB;
@@ -26,6 +27,7 @@ import java.util.List;
  * @author qianye
  * @create 2025-03-10 09:43
  */
+@Component
 public class TaskManager {
 
     @Autowired

@@ -5,7 +5,6 @@ import com.ruinap.adapter.communicate.client.NettyClient;
 import com.ruinap.adapter.communicate.client.handler.ClientHandler;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
-import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelHandlerContext;
@@ -27,7 +26,6 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Setter
 @Getter
-@Component
 public class ClientAttribute extends BaseAttribute {
 
     /**

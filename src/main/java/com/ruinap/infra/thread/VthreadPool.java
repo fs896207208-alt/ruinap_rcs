@@ -1,6 +1,7 @@
 package com.ruinap.infra.thread;
 
 import com.ruinap.infra.framework.annotation.Component;
+import com.ruinap.infra.framework.annotation.Order;
 import com.ruinap.infra.framework.annotation.PostConstruct;
 import com.ruinap.infra.framework.annotation.PreDestroy;
 import com.ruinap.infra.log.RcsLog;
@@ -45,6 +46,7 @@ import java.util.function.Supplier;
  * @create 2025-01-10 11:02
  */
 @Component
+@Order(7)
 public class VthreadPool {
     /**
      * 任务执行器

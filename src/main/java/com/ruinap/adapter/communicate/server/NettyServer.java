@@ -186,10 +186,18 @@ public class NettyServer extends SimpleChannelInboundHandler<Object> implements 
             // 等待服务器通道关闭
             future.channel().closeFuture().sync();
         } catch (InterruptedException e) {
+            // 1.捕获中断异常，记录为 INFO 日志，而不是抛出 RuntimeException
+            RcsLog.consoleLog.info("{} 服务收到停止信号，正在关闭...", attribute.getProtocol());
+            // 2. 恢复中断状态
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            // 3. 其他真正的异常才抛出
+            RcsLog.consoleLog.error("服务端运行异常", e);
             throw new RuntimeException(e);
         } finally {
             // 关闭线程组
             attribute.getBossGroup().shutdownGracefully();
+            RcsLog.consoleLog.info("{} 服务已停止，资源释放完毕", attribute.getProtocol());
         }
         return null;
     }

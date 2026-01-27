@@ -20,6 +20,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
 import io.netty.util.CharsetUtil;
 import io.netty.util.concurrent.EventExecutorGroup;
 import io.netty.util.concurrent.ScheduledFuture;
@@ -83,7 +85,7 @@ public class NettyClient extends SimpleChannelInboundHandler<Object> implements 
             //  调用 Protocol 接口的方法设置子参数
             attribute.getProtocolOption().setChildOption(b);
             // 添加日志处理器
-            //b.handler(new LoggingHandler(LogLevel.INFO));
+            b.handler(new LoggingHandler(LogLevel.DEBUG));
             b.handler(new ChannelInitializer<SocketChannel>() {
                 @Override
                 protected void initChannel(SocketChannel ch) {

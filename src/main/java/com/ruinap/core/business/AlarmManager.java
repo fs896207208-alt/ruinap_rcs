@@ -30,6 +30,8 @@ public class AlarmManager {
     private VthreadPool vthreadPool;
     @Autowired
     private AlarmDB alarmDB;
+    //关闭标志位
+    private volatile boolean isShutdown = false;
 
     /**
      * 告警超时时间 (毫秒)
@@ -81,6 +83,8 @@ public class AlarmManager {
         if (alarmCache == null) {
             return;
         }
+        // 设置标志位
+        this.isShutdown = true;
         try {
             // 1. 停止定时清理任务，防止新任务产生
             alarmCache.cancelPruneSchedule();
@@ -117,6 +121,10 @@ public class AlarmManager {
      * @param source        告警来源 (AGV/WCS/Traffic)
      */
     public void triggerAlarm(String equipmentCode, String taskGroup, String taskCode, AlarmCodeEnum alarmEnum, String param, String source) {
+        //如果已关闭，直接忽略告警请求
+        if (isShutdown) {
+            return;
+        }
         // 1. 参数校验
         if (StrUtil.isBlank(equipmentCode) || alarmEnum == null) {
             return;

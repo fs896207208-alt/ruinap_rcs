@@ -17,10 +17,7 @@ import com.ruinap.infra.enums.netty.BrandEnum;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.enums.netty.ServerRouteEnum;
-import com.ruinap.infra.framework.annotation.Autowired;
-import com.ruinap.infra.framework.annotation.Component;
-import com.ruinap.infra.framework.annotation.EventListener;
-import com.ruinap.infra.framework.annotation.PreDestroy;
+import com.ruinap.infra.framework.annotation.*;
 import com.ruinap.infra.framework.core.event.netty.NettyConnectionEvent;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
@@ -164,7 +161,8 @@ public class NettyManager {
     // 1. 服务端启动逻辑
     // ========================================================================
 
-    private void startServers() {
+    @PostConstruct
+    public void startServers() {
         // 1. 启动 WebSocket 服务
         vthreadPool.execute(() -> {
             try {
@@ -203,9 +201,17 @@ public class NettyManager {
         }
         // 使用工厂创建实例
         NettyServer server = serverFactory.create(attribute);
-        server.start();
-        runningServers.put(attribute.getPort(), server);
-        RcsLog.consoleLog.info("服务端启动成功 Port: {}, Protocol: {}", attribute.getPort(), attribute.getProtocol());
+        try {
+            // 1. 【先注册】确保在阻塞前，实例已被管理
+            runningServers.put(attribute.getPort(), server);
+
+            // 2. 【后启动】这行代码会阻塞当前虚拟线程，直到服务停止
+            server.start();
+        } catch (Exception e) {
+            // 3. 【异常回滚】如果启动失败（如端口占用），从 Map 中移除
+            runningServers.remove(attribute.getPort());
+            RcsLog.consoleLog.error("服务端启动失败 Port: {}", attribute.getPort(), e);
+        }
     }
 
     /**
@@ -284,7 +290,7 @@ public class NettyManager {
     // 2. 客户端启动逻辑
     // ========================================================================
 
-    private void startClients() {
+    public void startClients() {
         // 启动AGV客户端
         startAgvClient();
 
@@ -359,7 +365,7 @@ public class NettyManager {
                     try {
                         doStartClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get()).join();
                     } catch (Exception e) {
-                        RcsLog.consoleLog.error("设备 [{}] 启动异常", clientId, e);
+                        handleStartException(clientId, e);
                     }
                 });
                 futures.add(taskSupplier.get());
@@ -432,7 +438,7 @@ public class NettyManager {
                         try {
                             doStartClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get()).join();
                         } catch (Exception e) {
-                            RcsLog.consoleLog.error("设备 [{}] 启动异常", clientId, e);
+                            handleStartException(clientId, e);
                         }
                     });
                     futures.add(taskSupplier.get());
@@ -498,7 +504,7 @@ public class NettyManager {
                     try {
                         doStartClient(protocolEnum, protocolOption, uri, linkEquipmentTypeEnum, clientId, connectFailed, handlerSupplier.get()).join();
                     } catch (Exception e) {
-                        RcsLog.consoleLog.error("设备 [{}] 启动异常", clientId, e);
+                        handleStartException(clientId, e);
                     }
                 });
                 futures.add(taskSupplier.get());
@@ -540,6 +546,26 @@ public class NettyManager {
             // 【关键】必须返回 boolean 值，传递给外部调用者
             return success;
         });
+    }
+
+    /**
+     * 优雅处理启动异常
+     * 对于连接被拒绝等预期内网络错误，只打印 WARN 且不带堆栈
+     */
+    private void handleStartException(String clientId, Exception e) {
+        // 1. 拆包 CompletionException
+        Throwable cause = e instanceof java.util.concurrent.CompletionException ? e.getCause() : e;
+
+        // 2. 检查是否为连接被拒绝
+        // 技巧：AnnotatedConnectException 是 ConnectException 的子类，所以 instanceof ConnectException 通常能捕获它。
+        // 但为了保险（防止某些版本实现不同），我们额外加上类名(String)判断，这样就不需要 import 私有类了。
+        if (cause instanceof java.net.ConnectException || "AnnotatedConnectException".equals(cause.getClass().getSimpleName())) {
+            // 降级为 WARN 日志
+            RcsLog.consoleLog.warn("设备 [{}] 连接失败: 目标服务器未响应 ({})", clientId, cause.getMessage());
+        } else {
+            // 其他异常打印完整堆栈
+            RcsLog.consoleLog.error("设备 [{}] 启动异常", clientId, e);
+        }
     }
 
     // ========================================================================

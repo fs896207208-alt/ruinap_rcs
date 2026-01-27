@@ -1,7 +1,8 @@
 package com.ruinap.core.job;
 
+import com.ruinap.adapter.communicate.NettyManager;
+import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Service;
-import com.ruinap.infra.framework.schedule.RcsCron;
 import com.ruinap.infra.framework.schedule.RcsScheduled;
 
 import java.util.concurrent.TimeUnit;
@@ -14,15 +15,15 @@ import java.util.concurrent.TimeUnit;
  */
 @Service
 public class RcsJob {
+    @Autowired
+    private NettyManager nettyManager;
 
-    @RcsCron("0/1 * * * * ?")
-    public void cronJob() {
-//        System.out.println(">>> [EXEC] Cron 任务执行!");
-
-    }
-
-    @RcsScheduled(configKey = "testDynamicTimer", period = 1, unit = TimeUnit.SECONDS)
-    public void dynamicJob() {
-        //RcsLog.consoleLog.info(RcsLog.getTemplate(2), RcsLog.randomInt(), ">>> [EXEC] 动态定时任务执行!");
+    /**
+     * 连接所有Netty客户端
+     */
+    @RcsScheduled(delay = 10, period = 10, unit = TimeUnit.SECONDS)
+    public void nettyClientStart() {
+        // 启动WebSocket客户端
+        nettyManager.startClients();
     }
 }

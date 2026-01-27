@@ -14,6 +14,8 @@ import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.netty.ProtocolEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
+import com.ruinap.infra.framework.core.AnnotationConfigApplicationContext;
+import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.thread.VthreadPool;
 import io.netty.util.concurrent.DefaultEventExecutorGroup;
 import io.netty.util.concurrent.EventExecutorGroup;
@@ -37,6 +39,11 @@ public class NettyClientFactory {
     private AlarmManager alarmManager;
     @Autowired
     private VthreadPool vthreadPool;
+    // 注入接口 ApplicationContext
+    // 之前报错是因为你写了 private AnnotationConfigApplicationContext ctx;
+    // 容器里只有接口类型的 Bean，所以匹配不上。改回接口就没问题了。
+    @Autowired
+    private ApplicationContext applicationContext;
 
     /**
      * 业务线程组
@@ -68,6 +75,11 @@ public class NettyClientFactory {
      * 负责将 Spring 管理的 Bean (如 AlarmManager, TaskDispatcher) 注入到 NettyClient 中
      */
     public NettyClient create(ClientAttribute attribute) {
+        ClientHandler handler = attribute.getHandler();
+        if (handler != null && applicationContext instanceof AnnotationConfigApplicationContext) {
+            // 强转后调用 autowireBean，给 handler 里的 @Autowired 字段赋值
+            ((AnnotationConfigApplicationContext) applicationContext).autowireBean(handler);
+        }
         return new NettyClient(attribute, BUSINESS_GROUP, coreYaml, alarmManager, vthreadPool);
     }
 

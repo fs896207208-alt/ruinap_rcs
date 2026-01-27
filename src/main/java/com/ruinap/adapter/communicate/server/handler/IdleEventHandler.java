@@ -84,14 +84,19 @@ public class IdleEventHandler extends ChannelInboundHandlerAdapter {
                     // [Step 3] 执行发送并监听结果
                     if (pingMsg != null) {
                         ctx.writeAndFlush(pingMsg).addListener(future -> {
-                            if (future.isSuccess()) {
-                                RcsLog.consoleLog.debug("心跳探测成功发送 [{}]: {}", protocol, ctx.channel().remoteAddress());
-                            } else {
-                                RcsLog.communicateLog.warn("心跳探测发送失败 (可能已断线): {}", ctx.channel().remoteAddress());
+                            if (!future.isSuccess()) {
+                                RcsLog.communicateLog.warn("心跳探测发送失败: {}", ctx.channel().remoteAddress());
                             }
                         });
 
-                        RcsLog.consoleLog.warn("连接假死探测: 第 {}/{} 次心跳保活...", count, MAX_LOSS_CONNECT_COUNT);
+                        // 2. 【关键优化】日志分级处理
+                        if (count > 1) {
+                            // 如果 count > 1，说明上次 Ping 没收到回复，确实需要警告
+                            RcsLog.consoleLog.warn("连接假死探测: 第 {}/{} 次心跳保活 (上一次未响应)...", count, MAX_LOSS_CONNECT_COUNT);
+                        } else {
+                            // 第一次探测通常是例行公事，使用 DEBUG 级别，保持控制台清爽
+                            RcsLog.consoleLog.debug("连接空闲，发送第 1 次心跳保活...");
+                        }
                     }
                 }
             }

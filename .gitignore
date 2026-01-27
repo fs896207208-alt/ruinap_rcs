@@ -42,3 +42,4 @@ build/
 /.idea/
 /.mvn/
 /arthas-output/
+/doc/h2db/

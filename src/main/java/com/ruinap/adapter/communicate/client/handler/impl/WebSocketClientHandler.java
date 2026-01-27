@@ -17,7 +17,6 @@ import com.ruinap.infra.enums.netty.AttributeKeyEnum;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 import com.ruinap.infra.enums.task.PlanStateEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
-import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -29,7 +28,6 @@ import io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler;
  * @author qianye
  * @create 2025-05-12 09:45
  */
-@Component
 public class WebSocketClientHandler implements ClientHandler {
     @Autowired
     private AgvManager agvManager;

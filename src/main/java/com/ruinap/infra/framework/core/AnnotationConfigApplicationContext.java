@@ -284,9 +284,10 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
                 try {
                     clazz.getDeclaredConstructor();
                 } catch (NoSuchMethodException e) {
-                    RcsLog.sysLog.error("初始化失败: 组件 [{}] 缺少 public 无参构造函数。暂不支持构造器注入，请使用 @Autowired 字段注入。", clazz.getName(), e);
-                    // 明确抛出业务异常，指导开发者
-                    throw new RuntimeException();
+                    String errorMsg = StrUtil.format("初始化失败: 组件 [{}] 缺少 public 无参构造函数。LCLM框架暂不支持构造器注入，请使用 @Autowired 字段注入。", clazz.getName());
+                    RcsLog.sysLog.error(errorMsg, e);
+                    // 将错误信息放入异常中，这样堆栈直接就能看到是哪个类出了问题
+                    throw new RuntimeException(errorMsg, e);
                 }
 
                 Object instance;
