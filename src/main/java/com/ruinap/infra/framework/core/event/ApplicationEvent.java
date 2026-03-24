@@ -1,5 +1,6 @@
 package com.ruinap.infra.framework.core.event;
 
+import java.time.Clock;
 import java.util.EventObject;
 
 /**
@@ -17,7 +18,7 @@ public abstract class ApplicationEvent extends EventObject {
 
     public ApplicationEvent(Object source) {
         super(source);
-        this.timestamp = System.currentTimeMillis();
+        this.timestamp = Clock.systemDefaultZone().millis();
     }
 
     public long getTimestamp() {

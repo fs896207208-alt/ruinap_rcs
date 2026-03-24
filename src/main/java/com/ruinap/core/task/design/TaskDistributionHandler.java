@@ -2,6 +2,7 @@ package com.ruinap.core.task.design;
 
 
 import com.ruinap.core.task.TaskManager;
+import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 
 /**
@@ -13,6 +14,7 @@ import com.ruinap.infra.framework.annotation.Component;
 @Component
 public class TaskDistributionHandler implements TaskFlowHandler {
 
+    @Autowired
     private TaskManager taskManager;
     /**
      * 下一个处理者

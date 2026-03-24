@@ -1,17 +1,19 @@
 package com.ruinap.infra.config;
 
+import cn.hutool.core.util.StrUtil;
 import com.ruinap.infra.config.common.ReloadableConfig;
+import com.ruinap.infra.config.event.RcsMapConfigRefreshEvent;
 import com.ruinap.infra.config.pojo.MapConfig;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.annotation.PostConstruct;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.Environment;
-import com.ruinap.infra.framework.core.event.config.RcsMapConfigRefreshEvent;
 import com.ruinap.infra.log.RcsLog;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 调度地图Yaml配置文件(支持指纹校验与热更新)
@@ -36,7 +38,7 @@ public class MapYaml implements ReloadableConfig {
      */
     @PostConstruct
     public void initialize() {
-        config = environment.bind("rcs_map", MapConfig.class);
+        rebind();
     }
 
     /**
@@ -44,8 +46,14 @@ public class MapYaml implements ReloadableConfig {
      */
     @Override
     public void rebind() {
-        // 1. 重新绑定最新配置 (Environment 此时已被 GlobalConfigManager 刷新过)
-        this.config = environment.bind("rcs_map", MapConfig.class);
+        // 1. 加载最新配置
+        MapConfig newConfig = environment.bind(getSourceName(), MapConfig.class);
+
+        // 2. 【新功能】在赋值前，预处理双向桥接点
+        processBidirectionalBridge(newConfig);
+
+        // 3. 原子赋值 (volatile保证可见性)
+        this.config = newConfig;
 
         // 2. 【关键】主动发布事件，通知 MapManager 去重新构建地图
         if (this.config != null && ctx != null) {
@@ -57,6 +65,72 @@ public class MapYaml implements ReloadableConfig {
     @Override
     public String getSourceName() {
         return "rcs_map";
+    }
+
+    /**
+     * 预处理双向桥接配置
+     * 自动生成反向的配置数据
+     */
+    private void processBidirectionalBridge(MapConfig config) {
+        if (config == null || config.getBridgePoint() == null || config.getBridgePoint().isEmpty()) {
+            return;
+        }
+
+        LinkedHashMap<String, LinkedHashMap<String, String>> bridgePoints = config.getBridgePoint();
+        LinkedHashMap<String, LinkedHashMap<String, String>> reverseEntries = new LinkedHashMap<>();
+
+        for (Map.Entry<String, LinkedHashMap<String, String>> entry : bridgePoints.entrySet()) {
+            String key = entry.getKey();
+            LinkedHashMap<String, String> props = entry.getValue();
+            if (props == null || key == null) {
+                continue;
+            }
+
+            String isBidirectional = props.get("bidirectional");
+            if ("true".equalsIgnoreCase(isBidirectional)) {
+                String[] split = key.trim().split("_");
+                if (split.length != 2) {
+                    continue;
+                }
+
+                String startMapId = split[0];
+                String targetMapId = split[1];
+                String reverseKey = StrUtil.format("{}_{}", targetMapId, startMapId);
+
+                // 如果反向配置不存在，则自动生成
+                if (!bridgePoints.containsKey(reverseKey)) {
+                    LinkedHashMap<String, String> reverseProps = new LinkedHashMap<>(props);
+
+                    // 交换起点和终点
+                    String p1 = props.get("origin");
+                    String p2 = props.get("destin");
+
+                    // 确保放入的是 String 类型
+                    reverseProps.put("origin", p2 != null ? p2 : "");
+                    reverseProps.put("destin", p1 != null ? p1 : "");
+                    reverseProps.put("bidirectional", "true");
+
+                    // 反转 bridge_id
+                    // 逻辑：找到最后两个 "_"，交换它们之间的内容
+                    // 例如：teleport_1_2 -> teleport_2_1
+                    // 例如：my_special_bridge_P1_M2 -> my_special_bridge_M2_P1
+                    String bridgeId = props.get("bridge_id");
+                    if (bridgeId != null) {
+                        // 使用正则替换：(.*)贪婪匹配前缀，([^_]+)匹配非下划线的ID段
+                        // 这样即使 ID 不是纯数字也能兼容
+                        String newId = bridgeId.replaceFirst("(.*)_([^_]+)_([^_]+)$", "$1_$3_$2");
+                        reverseProps.put("bridge_id", newId);
+                    }
+
+                    reverseEntries.put(reverseKey, reverseProps);
+                }
+            }
+        }
+
+        // 合并反向配置
+        if (!reverseEntries.isEmpty()) {
+            bridgePoints.putAll(reverseEntries);
+        }
     }
 
     /**

@@ -4,9 +4,10 @@ import cn.hutool.core.util.ReflectUtil;
 import com.ruinap.infra.config.pojo.MapConfig;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.Environment;
-import com.ruinap.infra.framework.core.event.config.RcsMapConfigRefreshEvent;
+import com.ruinap.infra.config.event.RcsMapConfigRefreshEvent;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.util.ArrayList;
@@ -36,6 +37,8 @@ class MapYamlTest {
     private Environment mockEnv;
     private ApplicationContext mockCtx;
     private MapConfig mockConfig;
+    @Mock
+    private Environment mockEnvironment;
 
     @BeforeEach
     void setUp() {
@@ -52,6 +55,7 @@ class MapYamlTest {
         // 3. 注入依赖
         ReflectUtil.setFieldValue(mapYaml, "environment", mockEnv);
         ReflectUtil.setFieldValue(mapYaml, "ctx", mockCtx);
+        ReflectUtil.setFieldValue(mapYaml, "environment", mockEnvironment);
 
     }
 

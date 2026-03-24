@@ -11,6 +11,7 @@ import com.ruinap.core.task.TaskManager;
 import com.ruinap.core.task.TaskPathManager;
 import com.ruinap.core.task.domain.RcsTask;
 import com.ruinap.core.task.domain.TaskPath;
+import com.ruinap.core.task.structure.auction.BidResult;
 import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
 import com.ruinap.infra.enums.task.TaskTypeEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
@@ -47,7 +48,7 @@ public class DistancePriorityMode implements TaskModeHandle {
      * @return agv
      */
     @Override
-    public RcsAgv handle(RcsTask task) {
+    public BidResult handle(RcsTask task) {
         //获取距离优先的AGV
         return distanceFirst(task);
     }
@@ -58,7 +59,7 @@ public class DistancePriorityMode implements TaskModeHandle {
      * @param rcsTask 任务
      * @return 最近的AGV
      */
-    private RcsAgv distanceFirst(RcsTask rcsTask) {
+    private BidResult distanceFirst(RcsTask rcsTask) {
         //先获取空闲AGV集合
         ConcurrentHashMap<String, RcsAgv> rcsAgvMap = new ConcurrentHashMap<>(agvManager.getIdleRcsAgvMap());
 
@@ -84,7 +85,7 @@ public class DistancePriorityMode implements TaskModeHandle {
             //如果没有再从充电中的AGV中选择
             selectedAgv = findNearestAgv(rcsTask, agvManager.getAllowCancelChargeRcsAgvMap());
         }
-        return selectedAgv;
+        return new BidResult(selectedAgv, rcsTask, 0, null);
     }
 
     /**

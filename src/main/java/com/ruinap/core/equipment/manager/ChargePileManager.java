@@ -21,7 +21,7 @@ public class ChargePileManager {
     /**
      * 全局充电桩集合
      */
-    public final Map<String, RcsChargePile> chargeCache = new ConcurrentHashMap<>();
+    private final Map<String, RcsChargePile> chargeCache = new ConcurrentHashMap<>();
 
     /**
      * 获取全部充电桩集合

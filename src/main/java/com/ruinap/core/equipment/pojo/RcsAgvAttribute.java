@@ -1,5 +1,7 @@
 package com.ruinap.core.equipment.pojo;
 
+import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
+import com.ruinap.infra.enums.netty.ProtocolEnum;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -12,4 +14,12 @@ import lombok.Setter;
 @Getter
 @Setter
 public class RcsAgvAttribute {
+    /**
+     * 协议枚举
+     */
+    private ProtocolEnum protocol;
+    /**
+     * 协议枚举
+     */
+    private LinkEquipmentTypeEnum equipmentType;
 }

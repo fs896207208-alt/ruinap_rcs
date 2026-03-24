@@ -4,6 +4,7 @@ package com.ruinap.core.task.structure.taskmode;
 import com.ruinap.core.equipment.manager.AgvManager;
 import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.task.domain.RcsTask;
+import com.ruinap.core.task.structure.auction.BidResult;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
@@ -29,7 +30,7 @@ public class PowerPriorityMode implements TaskModeHandle {
      * @return 返回选择的RcsAgv，如果没有合适的则返回null
      */
     @Override
-    public RcsAgv handle(RcsTask task) {
+    public BidResult handle(RcsTask task) {
         // 初始化最大电量为最小整数值，用于比较
         Integer maxPower = Integer.MIN_VALUE;
         // 初始化最近的AGV为null，用于记录选定的AGV
@@ -102,6 +103,6 @@ public class PowerPriorityMode implements TaskModeHandle {
             }
         }
         // 返回选定的AGV
-        return nearestAgv;
+        return new BidResult(nearestAgv, task, 0, null);
     }
 }

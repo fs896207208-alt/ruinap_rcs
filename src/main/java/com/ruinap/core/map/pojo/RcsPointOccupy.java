@@ -1,7 +1,7 @@
 package com.ruinap.core.map.pojo;
 
 import com.ruinap.core.map.enums.PointOccupyTypeEnum;
-import com.ruinap.infra.framework.core.event.point.RcsPointOccupyChangeEvent;
+import com.ruinap.core.map.event.RcsPointOccupyChangeEvent;
 import com.ruinap.infra.framework.util.SpringContextHolder;
 import com.ruinap.infra.lock.RcsLock;
 import com.ruinap.infra.log.RcsLog;
@@ -233,6 +233,9 @@ public class RcsPointOccupy implements Serializable {
      * @param changeType 改变类型
      */
     private void publishChangeEvent(Integer pointId, String deviceCode, PointOccupyTypeEnum type, RcsPointOccupyChangeEvent.ChangeType changeType) {
+
+        String actionStr = (changeType == RcsPointOccupyChangeEvent.ChangeType.OCCUPIED) ? "加锁" : "解锁";
+        RcsLog.consoleLog.info("[点位锁变更] 动作: {}, 点位ID: {}, 设备: {}, 类型: {}", actionStr, pointId, deviceCode, type.name());
         try {
             SpringContextHolder.publishEvent(new RcsPointOccupyChangeEvent(
                     this,

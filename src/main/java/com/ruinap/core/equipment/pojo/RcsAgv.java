@@ -54,6 +54,7 @@ public class RcsAgv {
      * 调度业务字段（数据来源：配置文件）
      */
     @Alias("brand")
+    @Deprecated
     private volatile String brand;
 
     /**

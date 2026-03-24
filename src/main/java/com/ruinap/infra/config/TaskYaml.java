@@ -41,7 +41,7 @@ public class TaskYaml implements ReloadableConfig {
     }
 
     private void bindInternal() {
-        this.config = environment.bind("rcs_task", TaskConfig.class);
+        this.config = environment.bind(getSourceName(), TaskConfig.class);
     }
 
     /**
@@ -56,6 +56,23 @@ public class TaskYaml implements ReloadableConfig {
     @Override
     public String getSourceName() {
         return "rcs_task";
+    }
+
+    /**
+     * 获取 任务来源
+     * <p>
+     * 如果配置文件中没有配置，则返回默认值 0
+     *
+     * @return 任务来源 0调度从rcs_task表中获取任务 1等待web端分发任务
+     */
+    public Integer getTaskSource() {
+        // 获取引用快照
+        TaskConfig current = config;
+        if (current == null || current.getTaskCommon() == null) {
+            return 0;
+        }
+        Integer taskSource = current.getTaskCommon().getTaskSource();
+        return taskSource == null ? 0 : taskSource;
     }
 
     /**

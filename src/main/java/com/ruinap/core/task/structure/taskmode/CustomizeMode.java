@@ -1,8 +1,8 @@
 package com.ruinap.core.task.structure.taskmode;
 
 
-import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.task.domain.RcsTask;
+import com.ruinap.core.task.structure.auction.BidResult;
 import com.ruinap.infra.log.RcsLog;
 
 /**
@@ -19,7 +19,7 @@ public class CustomizeMode implements TaskModeHandle {
      * @return RcsAgv
      */
     @Override
-    public RcsAgv handle(RcsTask task) {
+    public BidResult handle(RcsTask task) {
         RcsLog.algorithmLog.error("{} 未实现的自定义任务分配模式", task.getEquipmentCode());
         return null;
     }

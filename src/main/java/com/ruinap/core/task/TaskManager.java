@@ -2,12 +2,21 @@ package com.ruinap.core.task;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.db.Entity;
+import com.ruinap.core.business.AlarmManager;
+import com.ruinap.core.equipment.manager.HandoverDeviceManager;
 import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.task.domain.RcsTask;
 import com.ruinap.core.task.domain.TaskPath;
-import com.ruinap.core.task.structure.cycle.TaskLifecycleManage;
+import com.ruinap.core.task.structure.TaskSectionManager;
+import com.ruinap.core.task.structure.auction.BidResult;
+import com.ruinap.core.task.structure.cycle.TaskLifecycleManager;
 import com.ruinap.core.task.structure.distribution.TaskDistributionFactory;
 import com.ruinap.core.task.structure.distribution.TaskStateHandle;
+import com.ruinap.infra.config.InteractionYaml;
+import com.ruinap.infra.config.TaskYaml;
+import com.ruinap.infra.config.pojo.interactions.HandoverDeviceEntity;
+import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
+import com.ruinap.infra.enums.equipment.HandoverStateEnum;
 import com.ruinap.infra.enums.task.PlanStateEnum;
 import com.ruinap.infra.enums.task.TaskStateEnum;
 import com.ruinap.infra.enums.task.TaskTypeEnum;
@@ -16,6 +25,7 @@ import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.structure.FiFoConcurrentMap;
 import com.ruinap.persistence.repository.ConfigDB;
+import com.ruinap.persistence.repository.TaskAgvDB;
 import com.ruinap.persistence.repository.TaskDB;
 
 import java.util.ArrayList;
@@ -31,11 +41,25 @@ import java.util.List;
 public class TaskManager {
 
     @Autowired
+    private TaskYaml taskYaml;
+    @Autowired
     private TaskDB taskDB;
+    @Autowired
+    private TaskAgvDB taskAgvDB;
     @Autowired
     private ConfigDB configDB;
     @Autowired
     private TaskPathManager taskPathManager;
+    @Autowired
+    private InteractionYaml interactionYaml;
+    @Autowired
+    private AlarmManager alarmManager;
+    @Autowired
+    private HandoverDeviceManager handoverDeviceManager;
+    @Autowired
+    private TaskSectionManager taskSectionManager;
+    @Autowired
+    private TaskLifecycleManager taskLifecycleManager;
 
     /**
      * 全局任务集合
@@ -50,8 +74,16 @@ public class TaskManager {
      * @return 任务
      */
     public List<Entity> selectTaskList() {
-        // 从数据库获取任务列表
-        List<Entity> entityList = taskDB.selectTaskGroupList();
+        List<Entity> entityList;
+        // 获取任务来源
+        Integer taskSource = taskYaml.getTaskSource();
+        if (taskSource.equals(0)) {
+            // 从数据库获取任务列表
+            entityList = taskDB.selectTaskGroupList();
+        } else {
+            // 从数据库获取任务列表
+            entityList = taskAgvDB.selectTaskGroupList();
+        }
 
         // 如果任务列表为空，直接返回空列表
         if (entityList.isEmpty()) {
@@ -61,6 +93,14 @@ public class TaskManager {
         List<Entity> taskList = new ArrayList<>(entityList);
         // 遍历每个任务实体
         for (Entity entity : entityList) {
+            String taskCode = entity.getStr("task_code");
+
+            // 如果缓存里已经有了，则不需要重新转换和校验
+            // 除非你需要实时同步数据库的修改（如优先级变更），否则跳过
+            if (this.taskCache.containsKey(taskCode)) {
+                continue;
+            }
+
             RcsTask rcsTask = entity.toBean(RcsTask.class);
             // 用于收集原因
             List<String> reasons = new ArrayList<>();
@@ -106,24 +146,24 @@ public class TaskManager {
                 if (!TaskStateEnum.isEnumByCode(TaskStateEnum.CANCEL, taskState) && !TaskStateEnum.isEnumByCode(TaskStateEnum.NEW, taskState) && taskState.compareTo(TaskStateEnum.FINISH.code) > 0) {
                     String equipmentCode = rcsTask.getEquipmentCode();
                     if (equipmentCode != null && !equipmentCode.isEmpty()) {
-//                        TaskPath taskSection = TaskSectionManage.getTaskSection(equipmentCode);
-//                        boolean flag = false;
-//                        TaskPath taskPath = taskPathManager.getFirst(equipmentCode);
-//                        if (taskSection == null && taskPath == null) {
-//                            flag = true;
-//                        } else {
-//                            if (taskSection != null && !rcsTask.getId().equals(taskSection.getTaskId())) {
-//                                flag = true;
-//                            } else if (taskPath != null && !rcsTask.getId().equals(taskPath.getTaskId())) {
-//                                flag = true;
-//                            }
-//                        }
+                        TaskPath taskSection = taskSectionManager.getTaskSection(equipmentCode);
+                        boolean flag = false;
+                        TaskPath taskPath = taskPathManager.getFirst(equipmentCode);
+                        if (taskSection == null && taskPath == null) {
+                            flag = true;
+                        } else {
+                            if (taskSection != null && !rcsTask.getId().equals(taskSection.getTaskId())) {
+                                flag = true;
+                            } else if (taskPath != null && !rcsTask.getId().equals(taskPath.getTaskId())) {
+                                flag = true;
+                            }
+                        }
 
-//                        if (flag) {
-//                            //任务状态 -2上位取消 -1任务取消 0任务完成 1暂停任务 2新任务 3动作中 4取货动作中 5卸货动作中 6取货完成 7放货完成 97取货运行中 98卸货运行中 99运行中
-//                            rcsTask.setTaskState(TaskStateEnum.CANCEL.code);
-//                            RcsLog.consoleLog.info("{} 任务与调度任务路径数据不匹配，将任务改为取消", rcsTask.getTaskCode());
-//                        }
+                        if (flag) {
+                            //任务状态 -2上位取消 -1任务取消 0任务完成 1暂停任务 2新任务 3动作中 4取货动作中 5卸货动作中 6取货完成 7放货完成 97取货运行中 98卸货运行中 99运行中
+                            rcsTask.setTaskState(TaskStateEnum.CANCEL.code);
+                            RcsLog.consoleLog.info("{} 任务与调度任务路径数据不匹配，将任务改为取消", rcsTask.getTaskCode());
+                        }
                     }
                 }
 
@@ -143,8 +183,20 @@ public class TaskManager {
             TaskStateHandle stateHandler = TaskDistributionFactory.getFactory(taskStateEnum);
             if (stateHandler != null) {
                 //调用具体的处理器
-                RcsAgv rcsAgv = stateHandler.handle(rcsTask);
-                if (rcsAgv != null) {
+                BidResult bidResult = stateHandler.handle(rcsTask);
+                if (bidResult != null) {
+                    RcsAgv rcsAgv = bidResult.getRcsAgv();
+                    if (StrUtil.isBlank(String.valueOf(rcsAgv.getPointId()))) {
+                        RcsLog.consoleLog.error("{} 任务分配失败，AGV【{}】不在点位上，请将AGV移动到任意点位", rcsTask.getTaskCode(), rcsAgv.getAgvId());
+                        continue;
+                    }
+
+                    if (StrUtil.isBlank(rcsTask.getOrigin())) {
+                        //起点设置为AGV当前点位，以此实现单指令任务
+                        rcsTask.setOriginFloor(rcsAgv.getMapId());
+                        rcsTask.setOrigin(String.valueOf(rcsAgv.getPointId()));
+                    }
+
                     //判断AGV是否已经存在任务
                     List<TaskPath> taskPaths = taskPathManager.get(rcsAgv.getAgvId());
                     if (!taskPaths.isEmpty()) {
@@ -174,27 +226,27 @@ public class TaskManager {
                     //判断当前任务是否是新任务
                     if (taskStateEnum.equals(TaskStateEnum.NEW)) {
                         //这里加入检测，判断该任务是否适合运行
-////                        Boolean flag = TaskBusinessManage.newTaskCheck(rcsTask, rcsAgv);
-////                        if (!flag) {
-////                            return;
-////                        }
-//                        //任务拆分
-//                        taskPath = TaskSectionManage.getNewTaskSection(rcsTask, rcsAgv);
+                        Boolean flag = this.newTaskCheck(rcsTask, rcsAgv);
+                        if (!flag) {
+                            return;
+                        }
+                        //任务拆分
+                        taskPath = taskSectionManager.getNewTaskSection(bidResult);
                     } else {
                         //直接获取新任务
-//                        taskPath = TaskSectionManage.getTaskSection(rcsAgv.getAgvId());
-//                        if (taskPath == null) {
-//                            RcsLog.algorithmLog.error("{} 任务[{}]返回空数据，任务获取失败", rcsAgv.getAgvId(), rcsTask.getTaskCode());
-//                            continue;
-//                        }
+                        taskPath = taskSectionManager.getTaskSection(rcsAgv.getAgvId());
+                        if (taskPath == null) {
+                            RcsLog.algorithmLog.error("{} 任务[{}]返回空数据，任务获取失败", rcsAgv.getAgvId(), rcsTask.getTaskCode());
+                            continue;
+                        }
                     }
 
-//                    if (taskPath != null) {
-//                        //添加任务路径
-//                        addTaskPath(rcsAgv.getAgvId(), rcsTask, taskPath);
-//                    } else {
-//                        RcsLog.algorithmLog.error("{} 任务[{}]返回空数据，任务拆分失败", rcsAgv.getAgvId(), rcsTask.getTaskCode());
-//                    }
+                    if (taskPath != null) {
+                        //添加任务路径
+                        addTaskPath(rcsAgv.getAgvId(), rcsTask, taskPath);
+                    } else {
+                        RcsLog.algorithmLog.error("{} 任务[{}]返回空数据，任务拆分失败", rcsAgv.getAgvId(), rcsTask.getTaskCode());
+                    }
                 } else {
                     RcsLog.consoleLog.error("{} 任务分配失败，没有空闲的AGV", rcsTask.getTaskCode());
                     RcsLog.algorithmLog.error("{} 任务分配失败，没有空闲的AGV", rcsTask.getTaskCode());
@@ -215,24 +267,87 @@ public class TaskManager {
      * @param taskPath 任务路径
      */
     private void addTaskPath(String agvCode, RcsTask rcsTask, TaskPath taskPath) {
-        List<TaskPath> taskPaths = taskPathManager.get(agvCode);
-        if (taskPaths.isEmpty()) {
+        // 添加任务路径
+        boolean isSuccess = taskPathManager.putIfEmpty(agvCode, taskPath);
+        if (isSuccess) {
             RcsLog.algorithmLog.error("{} 任务[{}]成功分配到AGV", agvCode, rcsTask.getTaskCode());
             RcsLog.consoleLog.error("{} 任务[{}]成功分配到AGV", agvCode, rcsTask.getTaskCode());
-            // 添加任务路径
-            taskPathManager.put(agvCode, taskPath);
+
             // 设置设备编码
             rcsTask.setEquipmentCode(agvCode);
             // 设置下发状态 0未下发 1已下发
             rcsTask.setSendState(1);
 
             // 任务状态改成已下发
-            TaskLifecycleManage.stateChange(rcsTask, TaskStateEnum.ISSUED);
+            taskLifecycleManager.stateChange(rcsTask, TaskStateEnum.ISSUED);
         } else {
             RcsLog.algorithmLog.warn("{} 任务[{}]成功分配到AGV，但AGV[{}]已存在任务，等待AGV运行完成", agvCode, rcsTask.getTaskCode(), agvCode);
         }
     }
 
+    /**
+     * 新任务检测
+     * <p>
+     * 可在这里做一些任务下发前的业务逻辑，比如：输送线是否允许取放货
+     *
+     * @param rcsTask SQL任务
+     * @param rcsAgv  AGV
+     * @return 结果，true为通过，false为不通过
+     */
+    public Boolean newTaskCheck(RcsTask rcsTask, RcsAgv rcsAgv) {
+        boolean flag = true;
+        //获取任务起点
+        String origin = rcsTask.getOrigin();
+        //获取指定的输送线配置
+        HandoverDeviceEntity originHandoverDevice = interactionYaml.getHandoverDeviceByRelevancyCode(origin);
+        if (originHandoverDevice != null) {
+            //取货模式 0任务下发前询问是否可取货 1在对接点询问是否可取货
+            int pickupMode = originHandoverDevice.getPickupMode();
+            if (pickupMode == 0) {
+                //输送线状态
+                HandoverStateEnum handoverDeviceState = handoverDeviceManager.getHandoverDeviceState(origin);
+                if (HandoverStateEnum.isEnumByCode(handoverDeviceState, HandoverStateEnum.ALLOW_PICKUP.code)) {
+                    //发送取货中指令
+                    Boolean loadFlag = handoverDeviceManager.setHandoverDeviceLoad(origin);
+                    if (!Boolean.TRUE.equals(loadFlag)) {
+                        flag = false;
+                    }
+                } else {
+                    flag = false;
+                    RcsLog.consoleLog.error("{} 交接设备[{}]状态不是允许取货，请检查", rcsAgv.getAgvId(), origin);
+                    RcsLog.algorithmLog.error("{} 交接设备[{}]状态不是允许取货，请检查", rcsAgv.getAgvId(), origin);
+                    alarmManager.triggerAlarm(rcsAgv.getAgvId(), AlarmCodeEnum.E12001, origin, "rcs");
+                }
+            }
+        }
+
+        //获取任务终点
+        String destin = rcsTask.getDestin();
+        //获取指定的输送线配置
+        HandoverDeviceEntity destinHandoverDevice = interactionYaml.getHandoverDeviceByRelevancyCode(destin);
+        if (destinHandoverDevice != null) {
+            //卸货模式 0任务下发前询问是否可卸货 1在对接点询问是否可卸货
+            int unloadMode = destinHandoverDevice.getUnloadMode();
+            if (unloadMode == 0) {
+                //输送线状态
+                HandoverStateEnum handoverDeviceState = handoverDeviceManager.getHandoverDeviceState(destin);
+                if (HandoverStateEnum.isEnumByCode(handoverDeviceState, HandoverStateEnum.ALLOW_UNLOAD.code)) {
+                    //发送放货中指令
+                    Boolean unLoadFlag = handoverDeviceManager.setHandoverDeviceUnLoad(destin);
+                    if (!Boolean.TRUE.equals(unLoadFlag)) {
+                        flag = false;
+                    }
+                } else {
+                    flag = false;
+                    RcsLog.consoleLog.error("{} 交接设备[{}]状态不是允许卸货，请检查", rcsAgv.getAgvId(), destin);
+                    RcsLog.algorithmLog.error("{} 交接设备[{}]状态不是允许卸货，请检查", rcsAgv.getAgvId(), destin);
+                    alarmManager.triggerAlarm(rcsAgv.getAgvId(), AlarmCodeEnum.E12002, destin, "rcs");
+                }
+            }
+        }
+
+        return flag;
+    }
 
     /**
      * 任务信号检查

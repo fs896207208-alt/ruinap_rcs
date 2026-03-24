@@ -8,12 +8,14 @@ import com.ruinap.infra.framework.annotation.EventListener;
 import com.ruinap.infra.framework.boot.CommandLineRunner;
 import com.ruinap.infra.framework.boot.SpringBootApplication;
 import com.ruinap.infra.framework.config.AopFeatureControl;
+import com.ruinap.infra.framework.config.ConfigurableBeanFactory;
 import com.ruinap.infra.framework.config.SchedulingFeatureControl;
 import com.ruinap.infra.framework.core.event.ApplicationEvent;
 import com.ruinap.infra.framework.core.event.ApplicationEventPublisher;
 import com.ruinap.infra.framework.core.event.ApplicationListener;
 import com.ruinap.infra.lock.RcsLock;
 import com.ruinap.infra.log.RcsLog;
+import lombok.Data;
 import org.apache.logging.log4j.LogManager;
 import org.reflections.Reflections;
 
@@ -24,6 +26,9 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 【核心实现】基于注解的应用上下文 (Lightweight IoC Container)
@@ -33,8 +38,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h3>⚙️ 核心生命周期 (Lifecycle)：</h3>
  * <ol>
- * <li><strong>Environment Load:</strong> (新增) 扫描 config 目录，加载 YAML/Setting</li>
- * <li><strong>Scan & Instantiate:</strong> 扫描 @Component -> <strong>(新增) Check Condition</strong> -> 反射 new</li>
+ * <li><strong>Environment Load:</strong>  扫描 config 目录，加载 YAML/Setting</li>
+ * <li><strong>Scan & Instantiate:</strong> 扫描 @Component -> <strong> Check Condition</strong> -> 反射 new</li>
  * <li><strong>Dependency Injection:</strong> 扫描 @Autowired -> 填充属性</li>
  * <li><strong>Aware Callbacks:</strong> 处理 ApplicationContextAware</li>
  * <li><strong>Initialization:</strong> 执行 @PostConstruct</li>
@@ -52,6 +57,18 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
      * 所有的 @Component 组件都会以单例形式存在这里。
      */
     private final Map<Class<?>, Object> singletonObjects = new ConcurrentHashMap<>();
+
+    /**
+     * 原型 Bean 定义表 (只存 Class，不存实例)
+     * Key: 原型类 (Class), Value: 原型类 (Class)
+     */
+    private final Map<Class<?>, Class<?>> prototypeDefinitions = new ConcurrentHashMap<>();
+
+    /**
+     * 原型接口映射定义表
+     * Key: 接口类型, Value: 实现类类型
+     */
+    private final Map<Class<?>, Class<?>> prototypeInterfaceDefinitions = new ConcurrentHashMap<>();
 
     /**
      * 接口映射表
@@ -74,7 +91,13 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
      * 事件监听器集合
      * 存储所有扫描到的 ApplicationListener (包括通过 @EventListener 解析出来的)
      */
-    private final Set<ApplicationListener<?>> applicationListeners = new LinkedHashSet<>();
+    private final Set<ApplicationListenerWrapper> applicationListeners = new CopyOnWriteArraySet<>();
+
+    /**
+     * JDK 21 虚拟线程专属执行器 (无上限，极轻量)
+     * 独立于业务线程池，专门负责事件的极速派发，并且支持优雅停机。
+     */
+    private final ExecutorService asyncEventExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     /**
      * 【核心组件】环境配置对象
@@ -216,8 +239,8 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
                 doRunners();
 
                 isActive = true;
-                RcsLog.sysLog.info("Framework 容器启动完成，耗时: {} ms，共管理 {} 个组件",
-                        System.currentTimeMillis() - start, singletonObjects.size());
+                RcsLog.sysLog.info("Framework 容器启动完成，Singleton组件: {}, Prototype组件: {}, 耗时: {} ms",
+                        singletonObjects.size(), prototypeDefinitions.size(), System.currentTimeMillis() - start);
 
             } catch (Exception e) {
                 // 🛑 严重错误处理
@@ -266,7 +289,6 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
         // 4. 扫描所有带有 @Component 的类
         // 注意：@Service, @Repository 上面也有 @Component，所以也能被扫到
         Set<Class<?>> components = reflections.getTypesAnnotatedWith(Component.class);
-
         if (components.isEmpty()) {
             RcsLog.sysLog.warn("在路径 {} 下未扫描到任何组件，请检查 @ComponentScan 配置！", Arrays.toString(packageNames));
         }
@@ -281,38 +303,31 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
                 continue;
             }
 
+            // =======================================================
+            // 检查 @Scope 作用域
+            // =======================================================
+            boolean isPrototype = false;
+            if (clazz.isAnnotationPresent(Scope.class)) {
+                Scope scope = clazz.getAnnotation(Scope.class);
+                if (ConfigurableBeanFactory.SCOPE_PROTOTYPE.equalsIgnoreCase(scope.value())) {
+                    isPrototype = true;
+                }
+            }
+
+            if (isPrototype) {
+                // 原型模式：不实例化，只注册定义，留待 getBean 时按需创建
+                prototypeDefinitions.put(clazz, clazz);
+                for (Class<?> iface : clazz.getInterfaces()) {
+                    prototypeInterfaceDefinitions.putIfAbsent(iface, clazz);
+                }
+                RcsLog.sysLog.debug("注册 Prototype 组件定义: {}", clazz.getSimpleName());
+                // 跳过后续的单例实例化流程
+                continue;
+            }
+
             try {
-                // 检查是否存在无参构造函数
-                try {
-                    clazz.getDeclaredConstructor();
-                } catch (NoSuchMethodException e) {
-                    String errorMsg = StrUtil.format("初始化失败: 组件 [{}] 缺少 public 无参构造函数。LCLM框架暂不支持构造器注入，请使用 @Autowired 字段注入。", clazz.getName());
-                    RcsLog.sysLog.error(errorMsg, e);
-                    // 将错误信息放入异常中，这样堆栈直接就能看到是哪个类出了问题
-                    throw new RuntimeException(errorMsg, e);
-                }
-
-                Object instance;
-
-                // =======================================================
-                // 【核心机制】 AspectJ 切面实例接管 (AspectJ Integration)
-                // =======================================================
-                // 原理：使用 AspectJ 编译器 (AJC) 织入的切面是单例的，且由 JVM 类加载触发初始化。
-                // AJC 会自动生成 public static Aspect aspectOf() 方法。
-                // 我们必须通过这个方法获取"真身"，而不能自己 new，否则会有两个实例。
-                if (clazz.isAnnotationPresent(org.aspectj.lang.annotation.Aspect.class)) {
-                    try {
-                        Method aspectOf = clazz.getMethod("aspectOf");
-                        instance = aspectOf.invoke(null);
-                        RcsLog.sysLog.debug("已接管 AspectJ 切面实例: {}", clazz.getSimpleName());
-                    } catch (NoSuchMethodException e) {
-                        // 降级：如果未织入 (IDE 运行且未配置 ajc)，则回退到普通实例化
-                        instance = clazz.getDeclaredConstructor().newInstance();
-                    }
-                } else {
-                    // 普通组件：直接实例化
-                    instance = clazz.getDeclaredConstructor().newInstance();
-                }
+                // 【修改】调用提取的实例化方法 (逻辑与原代码一致，只是为了复用)
+                Object instance = createBeanInstance(clazz);
 
                 // 后续逻辑保持不变：放入单例池
                 singletonObjects.put(clazz, instance);
@@ -329,7 +344,102 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
     }
 
     /**
-     * 【新增辅助方法】检查 @ConditionalOnProperty
+     * 创建 Bean 实例 (抽取自原 doScanAndInstantiate，支持复用)
+     */
+    private Object createBeanInstance(Class<?> clazz) throws Exception {
+        // 检查是否存在无参构造函数
+        try {
+            clazz.getDeclaredConstructor();
+        } catch (NoSuchMethodException e) {
+            String errorMsg = StrUtil.format("初始化失败: 组件 [{}] 缺少 public 无参构造函数。LCLM框架暂不支持构造器注入，请使用 @Autowired 字段注入。", clazz.getName());
+            // (注：原代码这里是打印并抛异常，保留原逻辑)
+            // RcsLog.sysLog.error(errorMsg, e); // 为了避免重复日志，这里可以省略，由外层捕获或直接抛出
+            throw new RuntimeException(errorMsg, e);
+        }
+
+        Object instance;
+
+        // =======================================================
+        // 【核心机制】 AspectJ 切面实例接管 (AspectJ Integration)
+        // =======================================================
+        // 原理：使用 AspectJ 编译器 (AJC) 织入的切面是单例的，且由 JVM 类加载触发初始化。
+        // AJC 会自动生成 public static Aspect aspectOf() 方法。
+        // 我们必须通过这个方法获取"真身"，而不能自己 new，否则会有两个实例。
+        if (clazz.isAnnotationPresent(org.aspectj.lang.annotation.Aspect.class)) {
+            try {
+                Method aspectOf = clazz.getMethod("aspectOf");
+                instance = aspectOf.invoke(null);
+                RcsLog.sysLog.debug("已接管 AspectJ 切面实例: {}", clazz.getSimpleName());
+            } catch (NoSuchMethodException e) {
+                // 降级：如果未织入 (IDE 运行且未配置 ajc)，则回退到普通实例化
+                instance = clazz.getDeclaredConstructor().newInstance();
+            }
+        } else {
+            // 普通组件：直接实例化
+            instance = clazz.getDeclaredConstructor().newInstance();
+        }
+        return instance;
+    }
+
+    /**
+     * 创建完整的 Prototype Bean (包含注入和初始化)
+     */
+    private Object createPrototypeBean(Class<?> clazz) {
+        try {
+            // 1. 实例化
+            Object instance = createBeanInstance(clazz);
+
+            // 2. 依赖注入
+            populateBean(instance);
+
+            // 3. Aware 回调
+            if (instance instanceof ApplicationContextAware) {
+                ((ApplicationContextAware) instance).setApplicationContext(this);
+            }
+
+            // 4. PostConstruct 初始化
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (method.isAnnotationPresent(PostConstruct.class)) {
+                    method.setAccessible(true);
+                    method.invoke(instance);
+                }
+            }
+
+            return instance;
+        } catch (Exception e) {
+            throw new RuntimeException("创建 Prototype Bean [" + clazz.getName() + "] 失败", e);
+        }
+    }
+
+    /**
+     * 统一 Bean 查找逻辑 (支持 Singleton + Prototype)
+     */
+    private Object getBeanOrNull(Class<?> targetType) {
+        // 1. 查单例池
+        Object bean = singletonObjects.get(targetType);
+        if (bean != null) return bean;
+
+        // 2. 查单例接口池
+        bean = interfaceMap.get(targetType);
+        if (bean != null) return bean;
+
+        // 3. 查原型定义池 (Prototype)
+        Class<?> implClass = prototypeDefinitions.get(targetType);
+        if (implClass == null) {
+            // 4. 查原型接口定义池
+            implClass = prototypeInterfaceDefinitions.get(targetType);
+        }
+
+        if (implClass != null) {
+            // 【关键】现用现做：创建一个新的 Prototype 实例
+            return createPrototypeBean(implClass);
+        }
+
+        return null;
+    }
+
+    /**
+     * 检查 @ConditionalOnProperty
      */
     private boolean checkCondition(Class<?> clazz) {
         if (!clazz.isAnnotationPresent(ConditionalOnProperty.class)) {
@@ -400,7 +510,7 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
                     Object dependency = null;
 
                     // =======================================================
-                    // 【新增特性】 支持 List<T> 集合注入
+                    //支持 List<T> 集合注入，(仅支持单例聚合)
                     // =======================================================
                     if (List.class.isAssignableFrom(targetType)) {
                         Type genericType = field.getGenericType();
@@ -430,13 +540,11 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
                         dependency = this.environment;
                     }
 
-                    // 1. 先去单例池找（按类名找）
+                    // 统一调用 getBeanOrNull 获取依赖
+                    // 原有代码是分步查 singletonObjects 和 interfaceMap，现在逻辑已封装到 getBeanOrNull 中
+                    // 这样无论是单例还是原型，都能在这里被正确获取
                     if (dependency == null) {
-                        dependency = singletonObjects.get(targetType);
-                    }
-                    // 2. 找不到再去接口映射池找（按接口找）
-                    if (dependency == null) {
-                        dependency = interfaceMap.get(targetType);
+                        dependency = getBeanOrNull(targetType);
                     }
 
                     // 检查 required
@@ -463,7 +571,7 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
 
     /**
      * 阶段三：执行 Aware 回调
-     * 【新增内核方法】处理 ApplicationContextAware 接口
+     * 处理 ApplicationContextAware 接口
      * 遍历所有 Bean，如果实现了该接口，就调用 setApplicationContext
      */
     private void doAwareCallbacks() {
@@ -490,9 +598,10 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
             // 逻辑 1：处理接口式监听器 (实现 ApplicationListener 接口)
             // =======================================================
             if (bean instanceof ApplicationListener) {
-                // 按照规约：if 必须带大括号
-                this.applicationListeners.add((ApplicationListener<?>) bean);
-                RcsLog.sysLog.debug("注册接口式监听器: {}", beanClass.getSimpleName());
+                // 提取泛型参数
+                Class<?> eventType = resolveEventType(beanClass);
+                this.applicationListeners.add(new ApplicationListenerWrapper(eventType, (ApplicationListener<?>) bean));
+                RcsLog.sysLog.debug("注册接口式监听器: {}, 监听事件: {}", beanClass.getSimpleName(), eventType.getSimpleName());
             }
 
             // =======================================================
@@ -516,20 +625,16 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
 
                     // 3. 构造适配器：将 method 调用包装为标准的 ApplicationListener 接口调用
                     // 使用 lambda 表达式创建一个适配器，并在调用前进行类型检查
-                    ApplicationListener<ApplicationEvent> adapter = event -> {
-                        // 仅当发布的事件类型与方法参数类型匹配时才触发调用
-                        if (eventType.isAssignableFrom(event.getClass())) {
-                            try {
-                                method.setAccessible(true);
-                                method.invoke(bean, event);
-                            } catch (Exception e) {
-                                RcsLog.sysLog.error("注解事件监听器执行失败: {}#{}",
-                                        beanClass.getSimpleName(), method.getName(), e);
-                            }
+                    ApplicationListener<?> adapter = event -> {
+                        try {
+                            method.setAccessible(true);
+                            method.invoke(bean, event);
+                        } catch (Exception e) {
+                            RcsLog.sysLog.error("注解事件监听器执行失败: {}#{}", beanClass.getSimpleName(), method.getName(), e);
                         }
                     };
 
-                    this.applicationListeners.add(adapter);
+                    this.applicationListeners.add(new ApplicationListenerWrapper(eventType, adapter));
                     RcsLog.sysLog.debug("注册注解式监听器适配器: {}#{}", beanClass.getSimpleName(), method.getName());
                 }
             }
@@ -537,26 +642,51 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
     }
 
     /**
-     * 【核心实现】发布事件
+     * 辅助方法：解析 ApplicationListener<E> 中的泛型 E
+     */
+    private Class<?> resolveEventType(Class<?> listenerClass) {
+        Type[] interfaces = listenerClass.getGenericInterfaces();
+        for (Type type : interfaces) {
+            if (type instanceof ParameterizedType paramType) {
+                if (paramType.getRawType() == ApplicationListener.class) {
+                    return (Class<?>) paramType.getActualTypeArguments()[0];
+                }
+            }
+        }
+        // 兜底：如果无法解析，默认接收所有事件
+        return ApplicationEvent.class;
+    }
+
+    /**
+     * 【核心实现】发布事件 (支持同步/异步控制)
      */
     @Override
-    public void publishEvent(ApplicationEvent event) {
+    public void publishEvent(ApplicationEvent event, boolean isSync) {
         if (event == null) {
             return;
         }
 
-        for (ApplicationListener listener : applicationListeners) {
-            // 核心逻辑：获取监听器期望的泛型类型
-            // 在极简框架中，我们可以通过获取实现的接口泛型或适配器中的 eventType 来比对
-            try {
-                // 这里我们模拟 Spring 的处理逻辑：如果监听器能处理该事件类型，则分发
-                // 对于直接实现接口的类，我们调用时 Java 会自动处理一部分
-                // 但为了彻底防止 ClassCastException，建议增加一层保护
-                listener.onApplicationEvent(event);
-            } catch (ClassCastException e) {
-                // 如果类型不匹配，捕获异常并跳过，实现自动过滤
-                RcsLog.sysLog.debug("事件类型 {} 与监听器 {} 不匹配，跳过分发",
-                        event.getClass().getSimpleName(), listener.getClass().getSimpleName());
+        for (ApplicationListenerWrapper wrapper : applicationListeners) {
+            // 【过滤前置】：在开线程和执行之前，进行精准且极其廉价的类型判断！
+            if (wrapper.supports(event)) {
+                if (isSync) {
+                    // 同步阻塞模式
+                    try {
+                        wrapper.invoke(event);
+                    } catch (Exception e) {
+                        RcsLog.sysLog.error("同步分发事件 [{}] 异常", event.getClass().getSimpleName(), e);
+                    }
+                } else {
+                    // 异步协程模式：只有真正需要处理该事件的监听器，才会为它开启虚拟线程！
+                    asyncEventExecutor.execute(() -> {
+                        try {
+                            wrapper.invoke(event);
+                        } catch (Exception e) {
+                            // 必须捕获，防止虚拟线程静默死亡
+                            RcsLog.sysLog.error("异步分发事件 [{}] 至监听器异常", event.getClass().getSimpleName(), e);
+                        }
+                    });
+                }
             }
         }
     }
@@ -566,7 +696,10 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
      * 执行 @PostConstruct 方法
      */
     private void doPostConstruct() throws Exception {
-        for (Object bean : singletonObjects.values()) {
+        List<Object> beans = new ArrayList<>(this.singletonObjects.values());
+        //排序：Order 值小的在前 (升序)
+        beans.sort((b1, b2) -> Integer.compare(getOrderValue(b1), getOrderValue(b2)));
+        for (Object bean : beans) {
             for (Method method : bean.getClass().getDeclaredMethods()) {
                 if (method.isAnnotationPresent(PostConstruct.class)) {
                     // 允许访问 private 方法
@@ -576,6 +709,23 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
                 }
             }
         }
+    }
+
+    /**
+     * 获取 Bean 的优先级顺序
+     * 用于 refresh 方法中的初始化排序
+     */
+    private int getOrderValue(Object bean) {
+        if (bean == null) {
+            return Integer.MAX_VALUE;
+        }
+        // 优先查找类上的 @Order 注解
+        Order order = bean.getClass().getAnnotation(Order.class);
+        if (order != null) {
+            return order.value();
+        }
+        // 没有注解的 Bean，优先级最低，排在最后
+        return Integer.MAX_VALUE;
     }
 
     /**
@@ -614,9 +764,9 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
      */
     @Override
     public <T> T getBean(Class<T> requiredType) {
-        Object bean = singletonObjects.get(requiredType);
+        Object bean = getBeanOrNull(requiredType);
         if (bean == null) {
-            bean = interfaceMap.get(requiredType);
+            throw new RuntimeException("没有找到类： " + requiredType.getName());
         }
         return requiredType.cast(bean);
     }
@@ -718,9 +868,38 @@ public class AnnotationConfigApplicationContext implements ApplicationContext {
         // 3. 清理缓存
         singletonObjects.clear();
         interfaceMap.clear();
+        //清理原型定义
+        prototypeDefinitions.clear();
+        prototypeInterfaceDefinitions.clear();
+        // 关闭虚拟线程事件分发器
+        asyncEventExecutor.shutdown();
         isActive = false;
         RcsLog.sysLog.info("Framework 容器已安全关闭");
         // 关闭日志系统
         LogManager.shutdown();
+    }
+
+    /**
+     * 监听器包装类：缓存泛型类型，实现 O(1) 的无异常事件过滤
+     */
+    @Data
+    private static class ApplicationListenerWrapper {
+        private final Class<?> eventType;
+        private final ApplicationListener<ApplicationEvent> delegate;
+
+        @SuppressWarnings("unchecked")
+        public ApplicationListenerWrapper(Class<?> eventType, ApplicationListener<?> delegate) {
+            this.eventType = eventType;
+            this.delegate = (ApplicationListener<ApplicationEvent>) delegate;
+        }
+
+        // 核心：无异常匹配
+        public boolean supports(ApplicationEvent event) {
+            return eventType.isAssignableFrom(event.getClass());
+        }
+
+        public void invoke(ApplicationEvent event) {
+            delegate.onApplicationEvent(event);
+        }
     }
 }

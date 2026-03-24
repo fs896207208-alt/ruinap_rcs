@@ -46,7 +46,7 @@ import java.util.function.Supplier;
  * @create 2025-01-10 11:02
  */
 @Component
-@Order(7)
+@Order(6)
 public class VthreadPool {
     /**
      * 任务执行器

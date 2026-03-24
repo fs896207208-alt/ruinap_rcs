@@ -7,6 +7,7 @@ import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.map.MapManager;
 import com.ruinap.core.map.pojo.RcsPoint;
 import com.ruinap.core.task.domain.RcsTask;
+import com.ruinap.core.task.structure.auction.BidResult;
 import com.ruinap.infra.config.TaskYaml;
 import com.ruinap.infra.config.pojo.task.TaskCommonEntity;
 import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
@@ -37,7 +38,7 @@ public class DestinAreaSpecifyMode implements TaskModeHandle {
     private DistancePriorityMode distancePriorityMode;
 
     @Override
-    public RcsAgv handle(RcsTask rcsTask) {
+    public BidResult handle(RcsTask rcsTask) {
         // 初始化用于存储可分配的AGV和需要充电的AGV的Map
         Map<String, RcsAgv> returnAgvMap = new HashMap<>();
         Map<String, RcsAgv> chargeAgvMap = new HashMap<>();
@@ -121,6 +122,6 @@ public class DestinAreaSpecifyMode implements TaskModeHandle {
         }
 
         // 返回最近的AGV对象
-        return nearestAgv;
+        return new BidResult(nearestAgv, rcsTask, 0, null);
     }
 }

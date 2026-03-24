@@ -1,8 +1,8 @@
 package com.ruinap.core.task.structure.distribution;
 
 
-import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.task.domain.RcsTask;
+import com.ruinap.core.task.structure.auction.BidResult;
 
 /**
  * 任务状态处理接口
@@ -17,5 +17,5 @@ public interface TaskStateHandle {
      * @param task 任务
      * @return 返回AGV
      */
-    RcsAgv handle(RcsTask task);
+    BidResult handle(RcsTask task);
 }

@@ -3,10 +3,11 @@ package com.ruinap.core.task.structure.cycle;
 
 import com.ruinap.core.equipment.manager.AgvManager;
 import com.ruinap.core.equipment.pojo.RcsAgv;
-import com.ruinap.core.task.domain.RcsTask;
 import com.ruinap.infra.enums.task.TaskStateEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
+import com.ruinap.infra.framework.annotation.EventListener;
+import com.ruinap.core.task.event.TaskStateChangeEvent;
 
 import java.util.Date;
 
@@ -17,19 +18,19 @@ import java.util.Date;
  * @create 2025-03-10 15:19
  */
 @Component
-public class RcsDataHandler implements TaskStateHandler {
+public class RcsDataHandler {
     @Autowired
     private AgvManager agvManager;
 
     /**
      * 处理状态变化
      *
-     * @param task     任务
-     * @param oldState 旧状态
-     * @param newState 新状态
+     * @param event 任务状态变更事件
      */
-    @Override
-    public void handle(RcsTask task, TaskStateEnum oldState, TaskStateEnum newState) {
+    @EventListener
+    public void handle(TaskStateChangeEvent event) {
+        var task = event.getTask();
+        var newState = event.getNewState();
         // 根据设备编码获取设备信息
         String equipmentCode = task.getEquipmentCode();
         // 根据设备编码获取设备信息

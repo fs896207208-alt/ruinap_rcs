@@ -1,13 +1,13 @@
 package com.ruinap.infra.config;
 
 import com.ruinap.infra.config.common.ReloadableConfig;
+import com.ruinap.infra.config.event.RcsCoreConfigRefreshEvent;
 import com.ruinap.infra.config.pojo.CoreConfig;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.annotation.PostConstruct;
 import com.ruinap.infra.framework.core.ApplicationContext;
 import com.ruinap.infra.framework.core.Environment;
-import com.ruinap.infra.framework.core.event.config.RcsCoreConfigRefreshEvent;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -41,7 +41,7 @@ public class CoreYaml implements ReloadableConfig {
     }
 
     private void bindInternal() {
-        this.config = environment.bind("rcs_core", CoreConfig.class);
+        this.config = environment.bind(getSourceName(), CoreConfig.class);
         if (this.config == null) {
             throw new RuntimeException("CoreYaml 初始化失败: Environment 中未找到 rcs_core 配置");
         }

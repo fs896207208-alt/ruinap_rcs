@@ -32,13 +32,8 @@ public class ElevatorEntity implements Serializable {
     private List<String> occupancys;
 
     /**
-     * 电梯传送点
-     */
-    private List<TeleportBody> teleports;
-
-    /**
      * 交互点
      */
-    private List<Map<String, InteractionsBody>> interactions;
+    private Map<String, InteractionsBody> interactions;
 }
 

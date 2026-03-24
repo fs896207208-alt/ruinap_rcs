@@ -62,7 +62,7 @@ public class AgvSuggestionManager {
     /**
      * 批量添加建议
      */
-    public void addSuggestions(String agvId, List<String> suggestions) {
+    public void addSuggestion(String agvId, List<String> suggestions) {
         if (CollUtil.isEmpty(suggestions)) {
             return;
         }

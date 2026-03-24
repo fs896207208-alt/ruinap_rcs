@@ -43,7 +43,7 @@ public class LinkYaml implements ReloadableConfig {
     }
 
     private void bindInternal() {
-        LinkConfig temp = environment.bind("rcs_link", LinkConfig.class);
+        LinkConfig temp = environment.bind(getSourceName(), LinkConfig.class);
         if (temp == null) {
             temp = new LinkConfig();
         }

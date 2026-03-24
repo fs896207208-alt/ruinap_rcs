@@ -1,23 +1,24 @@
 package com.ruinap.core.task;
 
 import com.ruinap.core.algorithm.SlideTimeWindow;
+import com.ruinap.core.algorithm.TrafficManager;
 import com.ruinap.core.equipment.manager.AgvManager;
 import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.map.MapManager;
 import com.ruinap.core.map.enums.PointOccupyTypeEnum;
+import com.ruinap.core.map.event.RcsPointOccupyChangeEvent;
 import com.ruinap.core.map.pojo.RcsPoint;
 import com.ruinap.core.map.util.GeometryUtils;
-import com.ruinap.core.strategy.TrafficService;
 import com.ruinap.core.task.domain.TaskPath;
 import com.ruinap.infra.framework.annotation.Async;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.EventListener;
 import com.ruinap.infra.framework.annotation.Service;
-import com.ruinap.infra.framework.core.event.point.RcsPointOccupyChangeEvent;
 import com.ruinap.infra.lock.RcsLock;
 import com.ruinap.infra.log.RcsLog;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TaskPathManager {
 
     @Autowired
-    private TrafficService trafficService;
+    private TrafficManager trafficManager;
     @Autowired
     private MapManager mapManager;
     @Autowired
@@ -91,6 +92,36 @@ public class TaskPathManager {
     }
 
     /**
+     * 原子操作：仅当指定 AGV 的任务路径列表为空时，才添加新路径。
+     *
+     * @param agvCode  AGV编号
+     * @param taskPath 任务路径
+     * @return true 表示添加成功（之前为空）；false 表示添加失败（之前已有任务）
+     */
+    public boolean putIfEmpty(String agvCode, TaskPath taskPath) {
+        if (agvCode == null || taskPath == null) {
+            return false;
+        }
+
+        // 使用写锁（Write Lock），保证检查和写入期间不会被其他线程打断
+        return RCS_LOCK.supplyInWrite(() -> {
+            List<TaskPath> currentPaths = TASK_PATH_MAP.get(agvCode);
+
+            // 1. 检查条件：如果列表存在且不为空，则说明已经有任务了，返回失败
+            if (currentPaths != null && !currentPaths.isEmpty()) {
+                return false;
+            }
+
+            // 2. 执行写入：创建新列表并放入 Map
+            List<TaskPath> newPaths = new ArrayList<>();
+            newPaths.add(taskPath);
+            TASK_PATH_MAP.put(agvCode, newPaths);
+
+            return true; // 返回成功
+        });
+    }
+
+    /**
      * 移除任务路径
      *
      * @param key 键
@@ -106,8 +137,25 @@ public class TaskPathManager {
      */
     public TaskPath removeFirst(String key) {
         return RCS_LOCK.supplyInWrite(() -> {
-            List<TaskPath> taskPaths = get(key);
-            return taskPaths.removeFirst();
+            // 直接访问 Map，不调用 get(key) 避免嵌套锁
+            List<TaskPath> currentPaths = TASK_PATH_MAP.get(key);
+
+            if (currentPaths == null || currentPaths.isEmpty()) {
+                return null;
+            }
+
+            // Copy-On-Write: 创建副本进行修改
+            List<TaskPath> newPaths = new ArrayList<>(currentPaths);
+            TaskPath removedTask = newPaths.removeFirst();
+
+            // 如果移除后为空，可以选择从 Map 中删除 key，或者存入空 List
+            if (newPaths.isEmpty()) {
+                TASK_PATH_MAP.remove(key);
+            } else {
+                TASK_PATH_MAP.put(key, newPaths);
+            }
+
+            return removedTask;
         });
     }
 
@@ -119,8 +167,9 @@ public class TaskPathManager {
      */
     public TaskPath getFirst(String key) {
         return RCS_LOCK.supplyInRead(() -> {
-            List<TaskPath> taskPaths = TASK_PATH_MAP.getOrDefault(key, new ArrayList<>());
-            return taskPaths.isEmpty() ? null : taskPaths.getFirst();
+            List<TaskPath> taskPaths = TASK_PATH_MAP.get(key);
+            // JDK 21 新语法
+            return (taskPaths == null || taskPaths.isEmpty()) ? null : taskPaths.getFirst();
         });
     }
 
@@ -131,7 +180,11 @@ public class TaskPathManager {
      * @return 任务路径列表，如果不存在则返回空集合
      */
     public List<TaskPath> get(String key) {
-        return RCS_LOCK.supplyInRead(() -> TASK_PATH_MAP.getOrDefault(key, new ArrayList<>()));
+        return RCS_LOCK.supplyInRead(() -> {
+            List<TaskPath> list = TASK_PATH_MAP.getOrDefault(key, new ArrayList<>());
+            // 重要：返回不可变列表，禁止外部 add/remove
+            return Collections.unmodifiableList(list);
+        });
     }
 
     /**
@@ -140,7 +193,13 @@ public class TaskPathManager {
      * @return 任务路径列表
      */
     public Map<String, List<TaskPath>> getAll() {
-        return RCS_LOCK.supplyInRead(() -> TASK_PATH_MAP);
+        return RCS_LOCK.supplyInRead(() -> {
+            // 返回一个不可变的快照，防止外部绕过锁直接修改 Map
+            if (TASK_PATH_MAP.isEmpty()) {
+                return Collections.emptyMap();
+            }
+            return Map.copyOf(TASK_PATH_MAP);
+        });
     }
 
     /**
@@ -249,15 +308,15 @@ public class TaskPathManager {
                         RcsLog.algorithmLog.info("{} 重构traveledRoutes（处理回退）: {}", rcsAgv.getAgvId(), pointsToAdds);
                         List<RcsPoint> newTraveledRoutes = new ArrayList<>(pointsToAdds);
                         slideTimeWindow.subWeight(newTraveledRoutes);
-                        traveledRoutes.clear();
-                        taskPath.addTraveledRoutes(newTraveledRoutes);
+                        // 直接覆盖引用
+                        taskPath.setTraveledRoutes(newTraveledRoutes);
                     }
 
                     // 更新realizedCost
                     taskPath.setRealizedCost(taskPath.getRealizedCost() + distance);
 
                     // 缓存AGV路径
-                    trafficService.updateAgvBuffer(rcsAgv.getAgvId(), taskPath.getEffectiveRunningPoints(), rcsAgv.getCarRange());
+                    trafficManager.updateAgvBuffer(rcsAgv.getAgvId(), taskPath.getEffectiveRunningPoints(), rcsAgv.getCarRange());
                 } else {
                     RcsLog.consoleLog.warn("{} AGV当前点位: {}，未在运行路径中找到", rcsAgv.getAgvId(), currentPoint);
                     RcsLog.algorithmLog.warn("{} AGV当前点位: {}，未在运行路径中找到", rcsAgv.getAgvId(), currentPoint);

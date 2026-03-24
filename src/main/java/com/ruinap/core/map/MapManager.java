@@ -3,21 +3,24 @@ package com.ruinap.core.map;
 import cn.hutool.core.util.StrUtil;
 import com.ruinap.core.map.enums.PointOccupyTypeEnum;
 import com.ruinap.core.map.pojo.*;
+import com.ruinap.core.map.util.GeometryUtils;
 import com.ruinap.core.map.util.MapKeyUtil;
+import com.ruinap.infra.config.MapYaml;
 import com.ruinap.infra.config.TaskYaml;
+import com.ruinap.infra.config.event.RcsMapConfigRefreshEvent;
 import com.ruinap.infra.enums.task.TaskTypeEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.annotation.Order;
 import com.ruinap.infra.framework.boot.CommandLineRunner;
 import com.ruinap.infra.framework.core.event.ApplicationListener;
-import com.ruinap.infra.framework.core.event.config.RcsMapConfigRefreshEvent;
 import com.ruinap.infra.log.RcsLog;
 import com.ruinap.infra.thread.VthreadPool;
 import lombok.Getter;
 import org.graph4j.Digraph;
 import org.graph4j.Edge;
 import org.graph4j.NeighborIterator;
+import org.locationtech.jts.index.strtree.STRtree;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,12 +35,14 @@ import java.util.concurrent.locks.ReentrantLock;
  * @create 2025-12-23 17:23
  */
 @Component
-@Order(6)
+@Order(7)
 public class MapManager implements CommandLineRunner, ApplicationListener<RcsMapConfigRefreshEvent> {
     @Autowired
     private MapLoader mapLoader;
     @Autowired
     private TaskYaml taskYaml;
+    @Autowired
+    private MapYaml mapYaml;
     @Autowired
     private VthreadPool vthreadPool;
 
@@ -754,6 +759,101 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
     }
 
     /**
+     * 根据 AGV 当前物理坐标查找其所在的最近点位（基于 STRtree 空间索引）
+     * <p>
+     * 核心策略：
+     * 1. 空间索引框选 (O(log N))：利用地图快照中的 STRtree，直接框选出位于 (x±容差, y±容差) 范围内的极少数候选点。
+     * 2. 最优匹配：对这几个候选点进行精确的欧氏距离计算，返回距离最近的一个。
+     * </p>
+     *
+     * @param mapId     AGV当前所在的地图编号
+     * @param slamX     AGV当前 X 坐标 (mm)
+     * @param slamY     AGV当前 Y 坐标 (mm)
+     * @param tolerance 点位吸附容差范围 (mm)
+     * @return 匹配的点位对象；如果不在任何点位范围内，则返回 null
+     */
+    public RcsPoint getPointByLocation(Integer mapId, Integer slamX, Integer slamY, int tolerance) {
+        if (mapId == null || slamX == null || slamY == null || tolerance < 0) {
+            return null;
+        }
+
+        MapSnapshot localSnap = this.snapshot;
+        // 防御性校验：确保快照和空间索引都已就绪
+        if (localSnap == null || localSnap.spatialIndexes() == null) {
+            return null;
+        }
+
+        // 1. 获取对应地图的 R-Tree 空间索引
+        STRtree tree = localSnap.spatialIndexes().get(mapId);
+        if (tree == null) {
+            return null;
+        }
+
+        // 2. 构建查询包围盒 (AABB)，框出容差的正方形范围
+        double minX = slamX - tolerance;
+        double minY = slamY - tolerance;
+        double maxX = slamX + tolerance;
+        double maxY = slamY + tolerance;
+
+        // 3. O(log N) 极速检索：只返回位于正方形内的极少数候选点
+        List<RcsPoint> candidates = GeometryUtils.querySpatialIndex(tree, minX, minY, maxX, maxY);
+
+        // 如果包围盒里一个点都没有，直接判定不在任何点位上
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+
+        RcsPoint closestPoint = null;
+        int minDistance = Integer.MAX_VALUE;
+
+        // 4. 几何精算：由于 candidates 通常只有 0~3 个点，这里的遍历成本几乎为 0
+        for (RcsPoint point : candidates) {
+            int distance = GeometryUtils.calculateDistance(slamX, slamY, point.getX(), point.getY());
+
+            // 寻找容差范围内的最短距离点（解决多点交叠时的漂移吸附问题）
+            if (distance <= tolerance && distance < minDistance) {
+                minDistance = distance;
+                closestPoint = point;
+
+                // 极致短路优化：完全重合绝对是最优解，不必再看后面的点了
+                if (distance == 0) {
+                    return closestPoint;
+                }
+            }
+        }
+
+        return closestPoint;
+    }
+
+    /**
+     * 判断点是否在路径容差范围内（包含高精度曲线碰撞计算）
+     * <p>
+     * 门面模式封装：对外隐藏了底层的 EdgeProvider 复杂性，
+     * 内部自动将当前 MapManager 实例的图查询能力作为闭包传递给几何算子。
+     * </p>
+     *
+     * @param mapId     地图编号
+     * @param paths     AGV 规划的路径点集合
+     * @param tolerance 容差范围 (mm)
+     * @param slamX     待检测的 X 坐标
+     * @param slamY     待检测的 Y 坐标
+     * @return true=在范围内, false=不在范围内
+     */
+    public boolean isPointWithinPathTolerance(Integer mapId, List<RcsPoint> paths, int tolerance, int slamX, int slamY) {
+        if (mapId == null || paths == null || paths.isEmpty()) {
+            return false;
+        }
+        // 调用底层极速算子，利用 Lambda 闭包将 this.getRcsPointTarget 优雅地传递进去
+        return GeometryUtils.isPointWithinPathTolerance(
+                paths,
+                tolerance,
+                slamX,
+                slamY,
+                (u, v) -> this.getRcsPointTarget(mapId, u, v)
+        );
+    }
+
+    /**
      * 内部辅助方法：处理邻居节点
      */
     private void processNeighbor(Digraph<RcsPoint, RcsPointTarget> graph, int nodeId, int nextLevel,
@@ -1081,7 +1181,8 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
 
             // 3. 状态迁移 (CRITICAL SECTION)
             // 获取新生成的 Occupy Map
-            Map<Long, RcsPointOccupy> newOccupys = newSnap.occupys();
+            // 注意：这里必须用 new HashMap 包装，否则 Record 返回的可能是不可变 Map
+            Map<Long, RcsPointOccupy> newOccupys = new HashMap<>(newSnap.occupys());
             // 获取当前的 Occupy Map (直接从旧快照拿)
             Map<Long, RcsPointOccupy> oldOccupys = this.snapshot.occupys();
 
@@ -1131,4 +1232,113 @@ public class MapManager implements CommandLineRunner, ApplicationListener<RcsMap
         }
         return Objects.equals(newSnap.versionMd5(), oldSnap.versionMd5());
     }
+
+    // ================== 7. 地图桥接点逻辑 ==================
+
+
+    /**
+     * 根据AGV行驶路径，精准获取桥接点配置（支持非相邻点匹配）
+     * <p>
+     * 核心逻辑：
+     * 1. 严格正向匹配 Key（如 "1_2"），绝不自动反转。
+     * 2. 支持跨越中间点：只要路径中包含 origin 和 destin，且 origin 在 destin 之前即可。
+     * 例如：路径 [1, 2, 3(1楼), 4(未知), 5(2楼), 6]
+     * 配置 1_2 (origin:1-3, destin:2-5) -> 匹配成功，即使 3 和 5 中间隔了 4。
+     *
+     * @param paths AGV规划路径
+     * @return 匹配的桥接配置，未找到返回 null
+     */
+    public List<LinkedHashMap<String, String>> getTargetBridgePoint(List<RcsPoint> paths) {
+        List<LinkedHashMap<String, String>> bridges = new ArrayList<>(3);
+        if (paths == null || paths.size() < 2) {
+            return null;
+        }
+
+        LinkedHashMap<String, LinkedHashMap<String, String>> bridgePoint = mapYaml.getBridgePoint();
+        if (bridgePoint == null || bridgePoint.isEmpty()) {
+            return bridges;
+        }
+
+        // 1. 遍历内存中所有的桥接配置 (如 "1_2", "2_1")
+        // 这一步是 O(M) 复杂度 (M为配置数，通常<50)，非常快
+        for (Map.Entry<String, LinkedHashMap<String, String>> entry : bridgePoint.entrySet()) {
+            String bridgeKey = entry.getKey();
+            LinkedHashMap<String, String> bridgeConf = entry.getValue();
+
+            // 2. 核心校验：路径是否按顺序经过了配置的 Origin 和 Destin
+            if (isPathMatchBridgeConfig(paths, bridgeConf)) {
+                // 找到匹配！添加到结果列表中
+                bridges.addLast(bridgeConf);
+            }
+        }
+
+        return bridges;
+    }
+
+    /**
+     * 校验路径是否包含配置的起止点，且顺序正确
+     * 规则：OriginIndex < DestinIndex
+     */
+    private boolean isPathMatchBridgeConfig(List<RcsPoint> paths, LinkedHashMap<String, String> bridgeConf) {
+        String originStr = bridgeConf.get("origin");
+        String destinStr = bridgeConf.get("destin");
+
+        if (originStr == null || destinStr == null) {
+            return false;
+        }
+        // 1. 找起点在路径里的下标
+        int originIndex = findPointIndexInPath(paths, originStr);
+        // 2. 找终点在路径里的下标
+        int destinIndex = findPointIndexInPath(paths, destinStr);
+
+        // 如果连终点都没经过，那肯定不是这个桥接配置
+        if (destinIndex == -1) {
+            return false;
+        }
+
+        // 如果 AGV 当前点就是终点（destinIndex == 0）
+        // 说明已经到达/越过了这段桥接区域，不需要再触发桥接逻辑
+        if (destinIndex == 0) {
+            return false;
+        }
+
+        //正常流程 (Origin -> Destin)
+        // 路径必须包含起点，且起点在终点之前
+        if (originIndex != -1) {
+            return originIndex < destinIndex;
+        }
+
+        // 断点续传/内部启动 (Inside -> Destin)
+        // 起点丢失 (originIndex == -1)，但终点存在 (destinIndex != -1)
+        // 这种情况通常发生在 AGV 已经在电梯/风淋室内部，直接去往出口
+        // 校验：确保我们不是"正好在终点"（destinIndex > 0），如果在终点本身，通常不需要触发桥接逻辑
+        return destinIndex > 0;
+    }
+
+    /**
+     * 辅助方法：解析 "MapID-PointID" 并在路径列表中查找其索引
+     *
+     * @return 索引值，未找到返回 -1
+     */
+    private int findPointIndexInPath(List<RcsPoint> paths, String configStr) {
+        if (configStr == null) {
+            return -1;
+        }
+        try {
+            int splitIndex = configStr.indexOf('-');
+            if (splitIndex == -1) {
+                return -1;
+            }
+            // 尝试通过别名获取点位
+            RcsPoint point = getPointByAlias(configStr);
+            if (point != null) {
+                // indexOf 底层就是遍历并调用 equals()，且代码更易读
+                return paths.indexOf(point);
+            }
+        } catch (Exception e) {
+            // 忽略格式解析错误，视为未找到
+        }
+        return -1;
+    }
+
 }

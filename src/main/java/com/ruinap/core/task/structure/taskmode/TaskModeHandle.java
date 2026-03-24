@@ -1,8 +1,8 @@
 package com.ruinap.core.task.structure.taskmode;
 
 
-import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.task.domain.RcsTask;
+import com.ruinap.core.task.structure.auction.BidResult;
 
 /**
  * 任务模式处理接口
@@ -17,5 +17,5 @@ public interface TaskModeHandle {
      * @param task 任务
      * @return RcsAgv
      */
-    RcsAgv handle(RcsTask task);
+    BidResult handle(RcsTask task);
 }

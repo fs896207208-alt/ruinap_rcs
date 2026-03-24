@@ -2,9 +2,9 @@ package com.ruinap.adapter.communicate.client.registry;
 
 
 import com.ruinap.adapter.communicate.base.event.AbstractClientEvent;
-import com.ruinap.adapter.communicate.event.AgvWebSocketClientEvent;
-import com.ruinap.adapter.communicate.event.ChargePileTcpEvent;
-import com.ruinap.adapter.communicate.event.TransferWebSocketClientEvent;
+import com.ruinap.adapter.communicate.commevent.AgvWebSocketClientEvent;
+import com.ruinap.adapter.communicate.commevent.ChargePileTcpEvent;
+import com.ruinap.adapter.communicate.commevent.TransferWebSocketClientEvent;
 import com.ruinap.infra.enums.netty.LinkEquipmentTypeEnum;
 
 import java.util.Map;

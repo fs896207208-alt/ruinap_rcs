@@ -384,6 +384,14 @@ public class GeometryUtils {
 
     // ================== 5. 辅助与私有方法 ==================
 
+    /**
+     * 判断点是否在给定包围盒内
+     *
+     * @param bbox 盒
+     * @param x    坐标
+     * @param y    坐标
+     * @return 是否在包围盒内
+     */
     public static boolean isPointWithinBoundingBox(int[] bbox, int x, int y) {
         if (bbox == null || bbox.length < 4) {
             return false;

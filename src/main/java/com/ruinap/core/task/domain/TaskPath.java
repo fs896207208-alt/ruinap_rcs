@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 任务路径类
@@ -107,7 +108,7 @@ public class TaskPath {
      */
     private volatile int realizedCost;
     /**
-     * 当前规划标记 0未规划 1已规划 2规划中
+     * 当前规划标记 0未规划 1待缓存重传 2待网关ACK 3网关下发失败
      */
     private volatile int currentPlan;
     /**
@@ -117,15 +118,15 @@ public class TaskPath {
     /**
      * 运行中点位
      */
-    private volatile List<RcsPoint> runningRoutes = new ArrayList<>();
+    private volatile List<RcsPoint> runningRoutes = new CopyOnWriteArrayList<>();
     /**
      * 新规划点位
      */
-    private volatile List<RcsPoint> newPlanRoutes = new ArrayList<>();
+    private volatile List<RcsPoint> newPlanRoutes = new CopyOnWriteArrayList<>();
     /**
      * 已行驶点位
      */
-    private volatile List<RcsPoint> traveledRoutes = new ArrayList<>();
+    private volatile List<RcsPoint> traveledRoutes = new CopyOnWriteArrayList<>();
     /**
      * 对接设备
      */

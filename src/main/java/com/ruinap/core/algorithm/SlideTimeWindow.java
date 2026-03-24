@@ -3,11 +3,11 @@ package com.ruinap.core.algorithm;
 import cn.hutool.core.util.StrUtil;
 import com.ruinap.core.map.pojo.RcsPoint;
 import com.ruinap.infra.config.CoreYaml;
+import com.ruinap.infra.config.event.RcsMapConfigRefreshEvent;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 import com.ruinap.infra.framework.annotation.PostConstruct;
 import com.ruinap.infra.framework.core.event.ApplicationListener;
-import com.ruinap.infra.framework.core.event.config.RcsMapConfigRefreshEvent;
 import com.ruinap.infra.log.RcsLog;
 import lombok.Getter;
 

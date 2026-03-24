@@ -50,23 +50,23 @@ public class TransferCommand {
     }
 
     // =========================================================
-    // 2. 输送线 (Conveyor)
+    // 2. 交接设备 (Handover)
     // =========================================================
 
     /**
-     * 获取输送线状态
+     * 获取交接设备状态
      *
      * @param out            指令字节流
      * @param equipmentCode  设备编号
      * @param relevancyPoint 关联点位
      * @param requestId      请求编号
      */
-    public static void writeGetConveyorLineState(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
-        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_state", relevancyPoint);
+    public static void writeGetHandoverDeviceState(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
+        writeHandoverCommand(out, equipmentCode, requestId, "handover_state", relevancyPoint);
     }
 
     /**
-     * 设置输送线装载中
+     * 设置交接设备装载中
      *
      * @param out            指令字节流
      * @param equipmentCode  设备编号
@@ -74,7 +74,7 @@ public class TransferCommand {
      * @param requestId      请求编号
      */
     public static void writeSetLoad(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
-        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_load", relevancyPoint);
+        writeHandoverCommand(out, equipmentCode, requestId, "handover_load", relevancyPoint);
     }
 
     /**
@@ -86,7 +86,7 @@ public class TransferCommand {
      * @param requestId      请求编号
      */
     public static void writeSetLoadFinish(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
-        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_load_finish", relevancyPoint);
+        writeHandoverCommand(out, equipmentCode, requestId, "handover_load_finish", relevancyPoint);
     }
 
     /**
@@ -98,11 +98,11 @@ public class TransferCommand {
      * @param requestId      请求编号
      */
     public static void writeCancelLoad(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
-        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_load_cancel", relevancyPoint);
+        writeHandoverCommand(out, equipmentCode, requestId, "handover_load_cancel", relevancyPoint);
     }
 
     /**
-     * 设置输送线卸载中
+     * 设置交接设备卸载中
      *
      * @param out            指令字节流
      * @param equipmentCode  设备编号
@@ -110,7 +110,7 @@ public class TransferCommand {
      * @param requestId      请求编号
      */
     public static void writeSetUnLoad(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
-        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_line_unload", relevancyPoint);
+        writeHandoverCommand(out, equipmentCode, requestId, "handover_line_unload", relevancyPoint);
     }
 
     /**
@@ -122,7 +122,7 @@ public class TransferCommand {
      * @param requestId      请求编号
      */
     public static void writeSetUnLoadFinish(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
-        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_unload_finish", relevancyPoint);
+        writeHandoverCommand(out, equipmentCode, requestId, "handover_unload_finish", relevancyPoint);
     }
 
     /**
@@ -134,7 +134,7 @@ public class TransferCommand {
      * @param requestId      请求编号
      */
     public static void writeCancelUnLoad(ByteBuf out, String equipmentCode, String relevancyPoint, Long requestId) {
-        writeConveyorCommand(out, equipmentCode, requestId, "conveyor_unload_cancel", relevancyPoint);
+        writeHandoverCommand(out, equipmentCode, requestId, "handover_unload_cancel", relevancyPoint);
     }
 
     // =========================================================
@@ -170,9 +170,9 @@ public class TransferCommand {
     }
 
     /**
-     * 输送线指令写入器 (包含 relevancy_point)
+     * 交接设备指令写入器 (包含 relevancy_point)
      */
-    private static void writeConveyorCommand(ByteBuf out, String equipmentCode, Long requestId, String event, String relevancyPoint) {
+    private static void writeHandoverCommand(ByteBuf out, String equipmentCode, Long requestId, String event, String relevancyPoint) {
         new FastJsonBuilder(out)
                 .set("date_time", CachedTimeUtils.getNowStringWithMillis())
                 .set("event", event)

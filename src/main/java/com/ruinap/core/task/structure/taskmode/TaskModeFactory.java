@@ -15,7 +15,7 @@ public class TaskModeFactory {
      * @return 任务模式处理器
      */
     public static TaskModeHandle getTaskModeFactory(Integer mode) {
-        //-1自定义 0距离优先 1电量优先 2最近停靠优先 3起点指定 4终点指定 5起点区域指定 6终点区域指定
+        //-1自定义 0距离优先 1电量优先 2最近停靠优先 3起点指定 4终点指定 5起点区域指定 6终点区域指定 7任务拍卖
         return switch (mode) {
             case -1 -> new CustomizeMode();
             case 1 -> new PowerPriorityMode();
@@ -24,6 +24,7 @@ public class TaskModeFactory {
             case 4 -> new DestinSpecifyMode();
             case 5 -> new OriginAreaSpecifyMode();
             case 6 -> new DestinAreaSpecifyMode();
+            case 7 -> new AuctionMode();
             default -> new DistancePriorityMode();
         };
     }

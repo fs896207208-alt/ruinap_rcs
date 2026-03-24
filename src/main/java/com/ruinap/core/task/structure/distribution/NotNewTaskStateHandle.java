@@ -4,6 +4,7 @@ package com.ruinap.core.task.structure.distribution;
 import com.ruinap.core.equipment.manager.AgvManager;
 import com.ruinap.core.equipment.pojo.RcsAgv;
 import com.ruinap.core.task.domain.RcsTask;
+import com.ruinap.core.task.structure.auction.BidResult;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
 
@@ -27,7 +28,7 @@ public class NotNewTaskStateHandle implements TaskStateHandle {
      * @return AGV
      */
     @Override
-    public RcsAgv handle(RcsTask rcsTask) {
+    public BidResult handle(RcsTask rcsTask) {
         //获取AGV
         RcsAgv rcsAgv = agvManager.getRcsAgvByCode(rcsTask.getEquipmentCode());
 //        if (rcsAgv != null) {
@@ -55,7 +56,7 @@ public class NotNewTaskStateHandle implements TaskStateHandle {
 //                }
 //            }
 //        }
-        return rcsAgv;
+        return new BidResult(rcsAgv, rcsTask, 0, null);
     }
 
 }

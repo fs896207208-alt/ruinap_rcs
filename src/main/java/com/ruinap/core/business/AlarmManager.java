@@ -204,7 +204,7 @@ public class AlarmManager {
     // ==================== 数据库原子操作 ====================
     // 均由虚拟线程执行，允许阻塞
 
-    private void saveAlarmToDb(String equipmentCode, String taskGroup, String taskCode, AlarmCodeEnum alarm, String param, String source) {
+    private Integer saveAlarmToDb(String equipmentCode, String taskGroup, String taskCode, AlarmCodeEnum alarm, String param, String source) {
         try {
             Entity entity = Entity.create("rcs_alarm");
             entity.set("task_group", taskGroup);
@@ -221,11 +221,12 @@ public class AlarmManager {
             entity.set("state", 0);
 
             // 建议：此处可以捕获 DuplicateKeyException (如果设置了唯一索引)，忽略重复插入
-            alarmDB.createAlarm(entity);
+            return alarmDB.createAlarm(entity);
         } catch (Exception e) {
             // 记录日志，但不抛出异常中断业务流
             RcsLog.sysLog.error("告警入库失败 [{} - {}]", equipmentCode, alarm.code, e);
         }
+        return 0;
     }
 
     private void updateAlarmStatus(String equipmentCode, Integer alarmCode) {

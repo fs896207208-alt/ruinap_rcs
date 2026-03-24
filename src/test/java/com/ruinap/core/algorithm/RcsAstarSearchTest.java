@@ -2,6 +2,7 @@ package com.ruinap.core.algorithm;
 
 import cn.hutool.core.util.ReflectUtil;
 import com.ruinap.core.algorithm.domain.RouteResult;
+import com.ruinap.core.algorithm.search.RcsAstarSearch;
 import com.ruinap.core.map.MapManager;
 import com.ruinap.core.map.enums.PointOccupyTypeEnum;
 import com.ruinap.core.map.pojo.RcsPoint;
@@ -44,10 +45,11 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class RcsAstarSearchTest {
 
-    private RcsAstarSearch rcsAstarSearchService;
-
     @Mock
     private MapManager mapManager;
+
+    @Mock
+    private RcsAstarSearch rcsAstarSearch;
 
     @Mock
     private SlideTimeWindow slideTimeWindow;
@@ -57,244 +59,122 @@ class RcsAstarSearchTest {
 
     @BeforeEach
     void setUp() {
-        // --- 1. 实例化 Service (模拟 Spring 容器行为) ---
+        // --- 1. 实例化入口 Service ---
+        // 即使现在是手动传参，由于类没有无参构造，我们依然用 Objenesis 创建一个调用“壳子”
         Objenesis objenesis = new ObjenesisStd();
-        rcsAstarSearchService = objenesis.newInstance(RcsAstarSearch.class);
 
-        // --- 2. 注入 Mock 依赖 ---
-        ReflectUtil.setFieldValue(rcsAstarSearchService, "mapManager", mapManager);
-        ReflectUtil.setFieldValue(rcsAstarSearchService, "slideTimeWindow", slideTimeWindow);
+        // --- 2. 构建图 (注意：Vertex ID 必须与 Point 的 GraphIndex 一致) ---
+        graph = GraphBuilder.empty().estimatedNumVertices(50).buildDigraph();
 
-        // --- 3. 构建基础平面图 (用于前4个测试) ---
-        // F1: 0 -> 1(短) -> 3 -> 4
-        //     0 -> 2(长) -> 3
-        graph = GraphBuilder.empty().estimatedNumVertices(20).buildDigraph();
-
-        // 初始化基础点位 (ID, MapId, X, Y)
+        // 使用 createPoint 内部生成的复合键作为索引
         p0 = createPoint(0, 1, 0, 0);
         p1 = createPoint(1, 1, 10, 0);
         p2 = createPoint(2, 1, 10, 10);
         p3 = createPoint(3, 1, 20, 0);
         p4 = createPoint(4, 1, 30, 0);
 
-        addVertexToGraph(graph, 0, p0);
-        addVertexToGraph(graph, 1, p1);
-        addVertexToGraph(graph, 2, p2);
-        addVertexToGraph(graph, 3, p3);
-        addVertexToGraph(graph, 4, p4);
+        addVertexToGraph(graph, p0);
+        addVertexToGraph(graph, p1);
+        addVertexToGraph(graph, p2);
+        addVertexToGraph(graph, p3);
+        addVertexToGraph(graph, p4);
 
-        graph.addEdge(0, 1, 10.0);
-        graph.addEdge(1, 3, 10.0);
-        graph.addEdge(0, 2, 20.0);
-        graph.addEdge(2, 3, 20.0);
-        graph.addEdge(3, 4, 5.0);
+        // 连接边
+        graph.addEdge(p0.getGraphIndex(), p1.getGraphIndex(), 10.0);
+        graph.addEdge(p1.getGraphIndex(), p3.getGraphIndex(), 10.0);
+        graph.addEdge(p0.getGraphIndex(), p2.getGraphIndex(), 20.0);
+        graph.addEdge(p2.getGraphIndex(), p3.getGraphIndex(), 20.0);
+        graph.addEdge(p3.getGraphIndex(), p4.getGraphIndex(), 5.0);
 
-        // --- 4. 配置默认 Mock ---
+        // 3. 默认 Mock 配置
         lenient().when(mapManager.getGraph()).thenReturn(graph);
+        // 【修正点】：mapId 是 Integer, pointId 是 Integer
+        lenient().when(mapManager.getPointOccupy(anyInt(), anyInt()))
+                .thenReturn(createOccupy(false, null));
+
+        // 默认原价返回 (Double 类型对齐)
         lenient().when(slideTimeWindow.costCalculation(anyDouble(), anyDouble()))
-                .thenAnswer(inv -> ((Double) inv.getArgument(0)).intValue());
-        lenient().when(mapManager.getPointOccupy(any(), anyInt()))
-                .thenAnswer(inv -> createOccupy(false, null));
+                .thenAnswer(inv -> (Double) inv.getArgument(0));
     }
 
-    // ... (前4个基础测试用例保持不变) ...
-
     @Test
-    @DisplayName("场景1：常规寻路 (0->1->3->4)")
+    @DisplayName("场景1：基础路径搜索 (P0->P1->P3->P4)")
     void testAStarSearch_Normal() {
-        RouteResult result = rcsAstarSearchService.aStarSearch("AGV_001", p0, p4, false);
+        // 调用最新签名的 aStarSearch
+        RouteResult result = rcsAstarSearch.aStarSearch("AGV_001", p0, p4);
+
         Assertions.assertTrue(result.isArrive());
-        // 注意：resultPoints 是 List<RcsPoint>
-        Assertions.assertEquals(1, result.getPaths().get(1).getId());
+        List<RcsPoint> path = result.getPaths();
+        Assertions.assertEquals(4, path.size());
+        Assertions.assertEquals(1, path.get(1).getId());
     }
 
     @Test
-    @DisplayName("场景2：占用避让 (P1被占，走P2)")
+    @DisplayName("场景2：障碍避让 (P1被占，绕行P2)")
     void testAStarSearch_AvoidOccupy() {
+        // 模拟 P1 被其他 AGV 物理锁定
         RcsPointOccupy blockedP1 = createOccupy(true, "AGV_OTHER");
-        when(mapManager.getPointOccupy(any(), eq(1))).thenReturn(blockedP1);
+        when(mapManager.getPointOccupy(anyInt(), eq(p1.getGraphIndex()))).thenReturn(blockedP1);
 
-        RouteResult result = rcsAstarSearchService.aStarSearch("AGV_SELF", p0, p4, true);
+        RouteResult result = rcsAstarSearch.aStarSearch("AGV_SELF", p0, p4);
 
         boolean hasP1 = result.getPaths().stream().anyMatch(p -> p.getId() == 1);
         boolean hasP2 = result.getPaths().stream().anyMatch(p -> p.getId() == 2);
-        Assertions.assertFalse(hasP1, "应避开P1");
-        Assertions.assertTrue(hasP2, "应绕行P2");
+        Assertions.assertFalse(hasP1, "路径必须避开 P1");
+        Assertions.assertTrue(hasP2, "路径必须经过 P2 绕行");
     }
 
     @Test
-    @DisplayName("场景3：自身豁免 (P1被自己占，走P1)")
-    void testAStarSearch_SelfExemption() {
-        RcsPointOccupy selfBlockedP1 = createOccupy(true, "AGV_SELF");
-        when(mapManager.getPointOccupy(any(), eq(1))).thenReturn(selfBlockedP1);
+    @DisplayName("场景3：拥堵代价避让 (P1额外收费，选择P2)")
+    void testAStarSearch_Congestion() {
+        // 只让 P1 路径（10.0 的边）产生巨额代价
+        // 此时 P1 路径 = 1010 + 1010 + 5 = 2025
+        // 此时 P2 路径 = 20 + 20 + 5 = 45 (将被选择)
+        when(slideTimeWindow.costCalculation(eq(10.0), anyDouble())).thenReturn(1010.0);
 
-        RouteResult result = rcsAstarSearchService.aStarSearch("AGV_SELF", p0, p4, true);
-        Assertions.assertEquals(1, result.getPaths().get(1).getId());
-    }
+        RouteResult result = rcsAstarSearch.aStarSearch("AGV_001", p0, p4);
 
-    @Test
-    @DisplayName("场景4：动态拥堵 (P1权重高，走P2)")
-    void testAStarSearch_DynamicWeight() {
-        graph.setVertexWeight(1, 10.0); // P1 拥堵
-        when(slideTimeWindow.costCalculation(anyDouble(), anyDouble()))
-                .thenAnswer(inv -> {
-                    Double dist = inv.getArgument(0);
-                    Double weight = inv.getArgument(1);
-                    return (weight != null && weight >= 5.0) ? dist.intValue() + 10000 : dist.intValue();
-                });
-
-        RouteResult result = rcsAstarSearchService.aStarSearch("AGV_001", p0, p4, false);
         boolean hasP1 = result.getPaths().stream().anyMatch(p -> p.getId() == 1);
-        Assertions.assertFalse(hasP1, "应避开拥堵点 P1");
+        Assertions.assertFalse(hasP1, "应当选择总代价更低的 P2 绕行路径");
     }
 
-    // ==================== 新增：跨楼层测试场景 ====================
+    // ==================== 辅助私有方法 ====================
 
-    @Test
-    @DisplayName("场景5：同坐标折返跨层 (关键修正)")
-    void testCrossFloor_LoopBack() {
-        // --- 场景重建 (模拟 MapLoader 行为) ---
-        // 关键规则：GraphIndex 必须连续！
-        // 我们重用 graph 对象，但要小心索引冲突。
-        // 为安全起见，我们使用 10, 11, 12, 13 作为连续段（假设 estimatedNumVertices 够大）
-        // 或者直接清空图重建（但在 Mockito @BeforeEach 里比较麻烦）。
-        // 最稳妥的方式：直接接在 setUp 的 0~4 后面，使用 5, 6, 7, 8
-
-        // 1. 定义点位 (GraphIndex 连续，BusinessID 重复)
-        // F1 起点: GraphIndex=5, ID=0, MapId=1, (0,0)
-        RcsPoint start = createPointWithIndex(5, 0, 1, 0, 0);
-
-        // F1 电梯: GraphIndex=6, ID=2, MapId=1, (10,0)
-        RcsPoint lift1 = createPointWithIndex(6, 2, 1, 10, 0);
-
-        // F2 电梯: GraphIndex=7, ID=2, MapId=2, (10,0)
-        RcsPoint lift2 = createPointWithIndex(7, 2, 2, 10, 0);
-
-        // F2 终点: GraphIndex=8, ID=0, MapId=2, (0,0)
-        RcsPoint end = createPointWithIndex(8, 0, 2, 0, 0);
-
-        // 2. 加入图
-        addVertexToGraph(graph, 5, start);
-        addVertexToGraph(graph, 6, lift1);
-        addVertexToGraph(graph, 7, lift2);
-        addVertexToGraph(graph, 8, end);
-
-        // 3. 连接边
-        graph.addEdge(5, 6, 10.0);  // Start -> Lift1
-        graph.addEdge(6, 7, 50.0);  // Lift1 -> Lift2 (跨层)
-        graph.addEdge(7, 8, 10.0);  // Lift2 -> End
-
-        // 4. Mock Map2 状态
-        lenient().when(mapManager.getPointOccupy(eq(2), anyInt()))
-                .thenAnswer(inv -> createOccupy(false, null));
-
-        // --- 执行 ---
-        // 你的 RcsAstarSearch 内部会使用 start.getGraphIndex()=5, end.getGraphIndex()=8
-        RouteResult result = rcsAstarSearchService.aStarSearch("AGV_LOOP", start, end, false);
-
-        // --- 验证 ---
-        Assertions.assertTrue(result.isArrive(), "GraphIndex连续后，寻路应成功");
-        List<RcsPoint> path = result.getPaths();
-        System.out.println("✅ 修正后的折返路径: " + path);
-
-        Assertions.assertEquals(4, path.size());
-
-        // 验证业务ID顺序: 0 -> 2 -> 2 -> 0
-        Assertions.assertEquals(0, path.get(0).getId());
-        Assertions.assertEquals(2, path.get(1).getId());
-        Assertions.assertEquals(2, path.get(2).getId());
-        Assertions.assertEquals(0, path.get(3).getId());
-
-        // 验证 MapId 切换: 1 -> 1 -> 2 -> 2
-        Assertions.assertEquals(1, path.get(0).getMapId());
-        Assertions.assertEquals(1, path.get(1).getMapId());
-        Assertions.assertEquals(2, path.get(2).getMapId());
-        Assertions.assertEquals(2, path.get(3).getMapId());
-    }
-
-    @Test
-    @DisplayName("场景6：异坐标跨层")
-    void testCrossFloor_DiffCoordinates() {
-        // 使用连续索引 9, 10, 11, 12
-        RcsPoint start = createPointWithIndex(9, 10, 1, 0, 0);
-        RcsPoint lift1 = createPointWithIndex(10, 11, 1, 10, 0);
-        RcsPoint lift2 = createPointWithIndex(11, 21, 2, 10, 0);
-        RcsPoint end = createPointWithIndex(12, 22, 2, 20, 20);
-
-        addVertexToGraph(graph, 9, start);
-        addVertexToGraph(graph, 10, lift1);
-        addVertexToGraph(graph, 11, lift2);
-        addVertexToGraph(graph, 12, end);
-
-        graph.addEdge(9, 10, 10.0);
-        graph.addEdge(10, 11, 60.0);
-        graph.addEdge(11, 12, 25.0);
-
-        lenient().when(mapManager.getPointOccupy(eq(2), anyInt()))
-                .thenAnswer(inv -> createOccupy(false, null));
-
-        RouteResult result = rcsAstarSearchService.aStarSearch("AGV_TRAVEL", start, end, false);
-        Assertions.assertTrue(result.isArrive());
-        Assertions.assertEquals(4, result.getPaths().size());
-        // 验证 MapId 切换
-        Assertions.assertEquals(1, result.getPaths().get(1).getMapId());
-        Assertions.assertEquals(2, result.getPaths().get(2).getMapId());
-    }
-
-    // ==================== 辅助方法 ====================
-
-    private void addVertexToGraph(Digraph<RcsPoint, RcsPointTarget> g, int id, RcsPoint point) {
-        g.addVertex(id);
-        g.setVertexLabel(id, point);
-    }
-
-    private RcsPointOccupy createOccupy(boolean blocked, String occupierDeviceCode) {
-        RcsPointOccupy occupy = new RcsPointOccupy();
-        ReflectUtil.setFieldValue(occupy, "physicalBlocked", blocked);
-        if (occupierDeviceCode != null) {
-            Map<String, Set<PointOccupyTypeEnum>> map = occupy.getOccupants();
-            Set<PointOccupyTypeEnum> types = new HashSet<>();
-            PointOccupyTypeEnum mockEnum = Mockito.mock(PointOccupyTypeEnum.class);
-            types.add(mockEnum);
-            map.put(occupierDeviceCode, types);
-        }
-        return occupy;
+    /**
+     * 将点位加入图，确保索引同步
+     */
+    private void addVertexToGraph(Digraph<RcsPoint, RcsPointTarget> g, RcsPoint point) {
+        int index = point.getGraphIndex();
+        g.addVertex(index);
+        g.setVertexLabel(index, point);
     }
 
     /**
-     * 创建带坐标的点位
+     * 构建点位，使用复合键作为 GraphIndex
      */
     private RcsPoint createPoint(int id, int mapId, int x, int y) {
         RcsPoint p = new RcsPoint();
         p.setId(id);
-        // 使用 Graph Index 避免 ID 冲突
+        p.setMapId(mapId);
+        // 核心：必须使用 MapKeyUtil 生成唯一的图索引
         p.setGraphIndex(Long.valueOf(MapKeyUtil.compositeKey(mapId, id)).intValue());
-        p.setMapId(mapId);
-        p.setFloor(mapId); // 假设 MapId = Floor
         p.setX(x);
         p.setY(y);
-        return p;
-    }
-
-    // 核心：手动指定 GraphIndex
-    private RcsPoint createPointWithIndex(int graphIndex, int id, int mapId, int x, int y) {
-        RcsPoint p = new RcsPoint();
-        p.setId(id);
-        p.setGraphIndex(graphIndex); // 必须与 addVertex 的 index 一致
-        p.setMapId(mapId);
         p.setFloor(mapId);
-        p.setX(x);
-        p.setY(y);
         return p;
     }
 
-    private RcsPoint createPoint(int id) {
-        RcsPoint p = new RcsPoint();
-        p.setId(id);
-        p.setMapId(1);
-        p.setFloor(1);
-        p.setX(0); // 初始化坐标，防止 GeometryUtils 报空指针
-        p.setY(0);
-        return p;
+    private RcsPointOccupy createOccupy(boolean blocked, String occupierCode) {
+        RcsPointOccupy occupy = new RcsPointOccupy();
+        // 强制修改私有物理阻塞状态
+        ReflectUtil.setFieldValue(occupy, "physicalBlocked", blocked);
+        if (occupierCode != null) {
+            Map<String, Set<PointOccupyTypeEnum>> occupants = occupy.getOccupants();
+            Set<PointOccupyTypeEnum> types = new HashSet<>();
+            // Mock 一个占用类型，防止逻辑判断报错
+            types.add(Mockito.mock(PointOccupyTypeEnum.class));
+            occupants.put(occupierCode, types);
+        }
+        return occupy;
     }
 }

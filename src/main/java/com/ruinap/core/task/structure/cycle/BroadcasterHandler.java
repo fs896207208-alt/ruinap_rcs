@@ -1,8 +1,10 @@
 package com.ruinap.core.task.structure.cycle;
 
 import cn.hutool.json.JSONObject;
-import com.ruinap.core.task.domain.RcsTask;
-import com.ruinap.infra.enums.task.TaskStateEnum;
+import com.ruinap.infra.framework.annotation.Async;
+import com.ruinap.infra.framework.annotation.Component;
+import com.ruinap.infra.framework.annotation.EventListener;
+import com.ruinap.core.task.event.TaskStateChangeEvent;
 
 /**
  * WebSocket广播
@@ -10,17 +12,20 @@ import com.ruinap.infra.enums.task.TaskStateEnum;
  * @author qianye
  * @create 2025-03-10 15:21
  */
-public class BroadcasterHandler implements TaskStateHandler {
+@Component
+public class BroadcasterHandler {
 
     /**
      * 该类会将任务状态变化广播到所有WebSocket客户端，方便其他客户端监控任务状态变化
      *
-     * @param task     任务
-     * @param oldState 旧状态
-     * @param newState 新状态
+     * @param event 任务状态变更事件
      */
-    @Override
-    public void handle(RcsTask task, TaskStateEnum oldState, TaskStateEnum newState) {
+    @Async
+    @EventListener
+    public void handle(TaskStateChangeEvent event) {
+        var task = event.getTask();
+        var oldState = event.getOldState();
+        var newState = event.getNewState();
         JSONObject entries = new JSONObject();
         entries.set("id", task.getId());
         entries.set("task_group", task.getTaskGroup());

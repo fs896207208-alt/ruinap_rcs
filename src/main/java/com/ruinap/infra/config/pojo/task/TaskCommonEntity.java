@@ -13,6 +13,16 @@ import java.util.Map;
 @Setter
 public class TaskCommonEntity {
     /**
+     * 任务来源
+     */
+    @JsonProperty("task_source")
+    private Integer taskSource;
+    /**
+     * 任务拍卖AGV数量
+     */
+    @JsonProperty("auction_top_k")
+    private Integer auctionTopK;
+    /**
      * 任务分配模式
      */
     @JsonProperty("task_distribute_mode")

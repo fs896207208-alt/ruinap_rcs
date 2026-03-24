@@ -39,6 +39,6 @@ public class AirShowerEntity {
     /**
      * 交互点
      */
-    private List<Map<String, AirShowerInteractionBody>> interactions;
+    private Map<String, AirShowerInteractionBody> interactions;
 }
 

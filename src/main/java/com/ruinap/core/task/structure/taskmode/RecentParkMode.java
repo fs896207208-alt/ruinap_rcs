@@ -9,6 +9,7 @@ import com.ruinap.core.map.MapManager;
 import com.ruinap.core.map.pojo.RcsPoint;
 import com.ruinap.core.map.util.GeometryUtils;
 import com.ruinap.core.task.domain.RcsTask;
+import com.ruinap.core.task.structure.auction.BidResult;
 import com.ruinap.infra.enums.alarm.AlarmCodeEnum;
 import com.ruinap.infra.framework.annotation.Autowired;
 import com.ruinap.infra.framework.annotation.Component;
@@ -38,7 +39,7 @@ public class RecentParkMode implements TaskModeHandle {
     private static final TimedCache<Integer, RcsPoint> STANDBY_POINT_TIMED_CACHE = CacheUtil.newTimedCache(1000 * 60 * 120);
 
     @Override
-    public RcsAgv handle(RcsTask rcsTask) {
+    public BidResult handle(RcsTask rcsTask) {
         RcsAgv returnAgv = null;
         //获取空闲AGV列表
         Map<String, RcsAgv> rcsAgvMap = agvManager.getIdleRcsAgvMap();
@@ -119,6 +120,6 @@ public class RecentParkMode implements TaskModeHandle {
                 RcsLog.algorithmLog.error("{} 任务分配失败，AGV类型[{}]类型不匹配", rcsTask.getTaskCode(), rcsAgv.getAgvType());
             }
         }
-        return returnAgv;
+        return new BidResult(returnAgv, rcsTask, 0, null);
     }
 }
